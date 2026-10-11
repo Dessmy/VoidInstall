@@ -221,7 +221,7 @@ EXTRA_PKGS="git curl less dosfstools pipewire wireplumber libspa-bluetooth alsa-
 xorg-minimal xorg-input-drivers xinit font-firacode
 libX11-devel libXft-devel libXinerama-devel freetype-devel harfbuzz-devel fontconfig-devel
 make gcc pkg-config unzip slop maim xclip xrandr xsetroot xinput setxkbmap
-dunst nnn bc neovim fastfetch qutebrowser brightnessctl htop jq
+xset xwallpaper dunst nnn bc neovim fastfetch qutebrowser brightnessctl htop jq
 tlp wireguard-tools openresolv mesa-dri vulkan-loader"
 
 # Nerd font: use whichever package name exists
@@ -289,13 +289,8 @@ printf 'tmpfs\t/tmp\ttmpfs\trw,nosuid,nodev,size=10%%,mode=1777\t0 0\n' >>/mnt/e
 
 # Copy dotfiles (incl. suckless sources) into the target, without .git
 log "Copying dotfiles..."
-mkdir -p /mnt/root/dotfiles /mnt/usr/local/src
+mkdir -p /mnt/root/dotfiles
 tar -C "$SCRIPT_DIR" --exclude=.git -cf - . | tar -C /mnt/root/dotfiles -xf -
-for tool in dwm st dmenu; do
-  if [ -d "$SCRIPT_DIR/$tool" ]; then
-    cp -r "$SCRIPT_DIR/$tool" /mnt/usr/local/src/
-  fi
-done
 
 # Variables for the chroot script (kept off the process list)
 {
@@ -410,12 +405,15 @@ echo 'fs.file-max = 2097152' >/etc/sysctl.d/99-filemax.conf
 H="/home/${USERNAME}"
 mkdir -p "$H/Downloads" "$H/Music" "$H/Pictures" "$H/Videos" "$H/.config" "$H/.local/bin"
 
-# Build and install suckless tools
+# Build suckless tools from ~/.config (sources stay editable; rebuild with dotsync)
+set -o pipefail
+DOT=/root/dotfiles
 for tool in dwm st dmenu; do
-  if [ -d "/usr/local/src/$tool" ]; then
+  if [ -d "$DOT/$tool" ]; then
     log "Building $tool..."
-    (cd "/usr/local/src/$tool" && make clean install) 2>&1 | tee "/root/$tool-build.log"
-    rm -rf "/usr/local/src/$tool"
+    rm -rf "$H/.config/$tool"
+    cp -r "$DOT/$tool" "$H/.config/$tool"
+    (cd "$H/.config/$tool" && make clean install && make clean) 2>&1 | tee "/root/$tool-build.log"
   fi
 done
 
@@ -430,6 +428,7 @@ src_of() {
   fi
 }
 
+shopt -s dotglob
 for item in "$DOT"/*; do
   [ -e "$item" ] || continue
   name=$(basename "$item")
@@ -439,23 +438,24 @@ for item in "$DOT"/*; do
       cp -r "$item"/. "$H/.local/bin/"
       chmod +x "$H/.local/bin"/* 2>/dev/null || true
       ;;
-    xinitrc)
-      f=$(src_of xinitrc)
+    .xinitrc)
+      f=$(src_of .xinitrc)
       [ -n "$f" ] || continue
       cp "$f" "$H/.xinitrc"
       sed -i "2a# Keyboard layout\nsetxkbmap \"${KBLAYOUT}\" \&\n" "$H/.xinitrc"
       chmod +x "$H/.xinitrc"
       ;;
-    bashrc)
-      f=$(src_of bashrc)
+    .bashrc)
+      f=$(src_of .bashrc)
       [ -n "$f" ] || continue
       cp "$f" "$H/.bashrc"
       ;;
-    bash_profile)
-      f=$(src_of bash_profile)
+    .bash_profile)
+      f=$(src_of .bash_profile)
       [ -n "$f" ] || continue
       cp "$f" "$H/.bash_profile"
       ;;
+    .git*) continue ;;
     *)
       rm -rf "$H/.config/$name"
       cp -r "$item" "$H/.config/$name"
@@ -466,6 +466,16 @@ done
 # Fallback .bash_profile so .bashrc loads on login
 if [ ! -f "$H/.bash_profile" ]; then
   echo '[[ -f "$HOME/.bashrc" ]] && source "$HOME/.bashrc"' >"$H/.bash_profile"
+fi
+
+# Auto-start X on tty1
+if ! grep -q 'exec startx' "$H/.bash_profile" 2>/dev/null; then
+  cat >>"$H/.bash_profile" <<'AUTOSTARTX'
+
+if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
+  exec startx
+fi
+AUTOSTARTX
 fi
 
 # PATH for ~/.local/bin
