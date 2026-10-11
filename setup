@@ -217,15 +217,12 @@ CORE_PKGS="base-system ${KERNEL_PKG} ${KERNEL_PKG}-headers linux-firmware grub d
 [ "$ROOTFS" = "btrfs" ] && CORE_PKGS="$CORE_PKGS btrfs-progs" || CORE_PKGS="$CORE_PKGS e2fsprogs"
 
 # Extra packages: missing ones are skipped with a warning
-EXTRA_PKGS="git wget curl bash-completion tree less usbutils seatd pipewire wireplumber libspa-bluetooth alsa-utils bluez ntfs-3g exfatprogs dosfstools
-xorg-minimal xorg-input-drivers noto-fonts-ttf noto-fonts-cjk noto-fonts-emoji font-firacode
-libX11 libXft libXinerama freetype harfbuzz fontconfig make gcc pkg-config libxcb xcb-util xcb-util-wm
+EXTRA_PKGS="git curl less dosfstools pipewire wireplumber libspa-bluetooth alsa-utils bluez
+xorg-minimal xorg-input-drivers xinit font-firacode
 libX11-devel libXft-devel libXinerama-devel freetype-devel harfbuzz-devel fontconfig-devel
-7zip zip unzip p7zip tar gzip bzip2 xz nnn bc slop maim ffmpeg chafa neovim fastfetch qutebrowser brightnessctl
-xinit xrandr xsetroot xinput xprop xwininfo xkill xdpyinfo xev setxkbmap xbacklight xclip xsel arandr autorandr
-mpv imv zathura zathura-pdf-mupdf keepassxc syncthing qbittorrent htop jq yq parallel moreutils entr tealdeer
-man-pages man-pages-posix cups cups-filters system-config-printer flatpak iwmenu bluetuith
-tlp cronie acpid zramen wireguard-tools openresolv mesa-demos vulkan-tools mesa-dri vulkan-loader"
+make gcc pkg-config unzip slop maim xclip xrandr xsetroot xinput setxkbmap
+dunst nnn bc neovim fastfetch qutebrowser brightnessctl htop jq
+tlp wireguard-tools openresolv mesa-dri vulkan-loader"
 
 # Nerd font: use whichever package name exists
 for nf in nerd-fonts-ttf nerd-fonts; do
@@ -250,7 +247,7 @@ fi
 
 if [ "$HAS_AMD" -eq 1 ]; then
   log "Adding AMD GPU packages..."
-  EXTRA_PKGS="$EXTRA_PKGS mesa-vulkan-radeon xf86-video-amdgpu mesa-vaapi mesa-vdpau linux-firmware-amd"
+  EXTRA_PKGS="$EXTRA_PKGS mesa-vulkan-radeon xf86-video-amdgpu mesa-vaapi linux-firmware-amd"
 fi
 
 if [ "$HAS_NVIDIA" -eq 1 ]; then
@@ -388,7 +385,7 @@ IWDCONF
 
 # Enable services (runit)
 mkdir -p /etc/runit/runsvdir/default
-for svc in dbus elogind iwd bluetoothd cronie acpid tlp zramen; do
+for svc in dbus elogind iwd bluetoothd tlp; do
   enable_svc "$svc"
 done
 
@@ -490,13 +487,8 @@ PRIMERUN
 
   cat >>"$H/.bashrc" <<'NVIDIATEST'
 
-# NVIDIA Prime Render Offload helpers
+# NVIDIA Prime Render Offload alias
 alias prime='prime-run'
-
-nvidia-test() {
-  prime-run glxinfo | grep "OpenGL renderer"
-  prime-run vulkaninfo | grep "deviceName"
-}
 NVIDIATEST
 fi
 
