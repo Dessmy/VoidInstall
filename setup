@@ -332,6 +332,7 @@ enable_svc() {
 }
 
 echo "root:${ROOT_PASS}" | chpasswd
+passwd -S root | grep -q " P " || { echo "!! root password not set" >&2; exit 1; }
 
 # Timezone, clock
 ln -sf "/usr/share/zoneinfo/${TIMEZONE}" /etc/localtime
@@ -364,6 +365,7 @@ for g in audio video input lp storage network kvm optical _seatd; do
 done
 useradd -m -G "$GROUPS_OK" -s /bin/bash "${USERNAME}"
 echo "${USERNAME}:${USER_PASS}" | chpasswd
+passwd -S "${USERNAME}" | grep -q " P " || { echo "!! user password not set" >&2; exit 1; }
 
 mkdir -p /etc/sudoers.d
 cat >/etc/sudoers.d/10-wheel <<'SUDOERS'
