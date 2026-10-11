@@ -1,4 +1,5 @@
 #!/bin/bash
+# Void Linux (glibc, runit) full installer + dotfiles
 set -e
 
 error() {
@@ -6,14 +7,16 @@ error() {
   exit 1
 }
 log() { echo ">> $1"; }
+warn() { echo "!! $1" >&2; }
 
 [ "$(id -u)" -eq 0 ] || error "Run as root: sudo ./setup"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export XBPS_ARCH=x86_64
 
 # Install required tools for partitioning
 log "Installing required tools..."
-xbps-install -S parted
+xbps-install -Sy parted || error "Cannot install parted (check network)."
 
 chattr -i /etc/resolv.conf 2>/dev/null || true
 
@@ -57,12 +60,13 @@ done
 read -rp "Timezone [UTC]: " TIMEZONE
 TIMEZONE=${TIMEZONE:-UTC}
 LOCALE="en_US.UTF-8"
+[ -e "/usr/share/zoneinfo/${TIMEZONE}" ] || error "Invalid timezone: $TIMEZONE"
 
 read -rp "Keyboard layout [us]: " KBLAYOUT
 KBLAYOUT=${KBLAYOUT:-us}
 loadkeys "$KBLAYOUT" 2>/dev/null || true
 
-read -rp "Mirror country code (blank = worldwide, e.g. US/DE/JP/SG): " MIRROR_COUNTRY
+read -rp "Mirror country code (blank = default, e.g. de/fi/us): " MIRROR_COUNTRY
 read -rp "EFI partition size in MiB [512]: " EFI_SIZE
 EFI_SIZE=${EFI_SIZE:-512}
 
@@ -144,7 +148,6 @@ wait_for_blockdev() {
 }
 
 lsblk "$DISK" 2>/dev/null || true
-ls -la "${PART_PREFIX}"* 2>/dev/null || true
 wait_for_blockdev "$ROOT_PART" || error "$ROOT_PART not found."
 
 log "Formatting partitions..."
@@ -171,7 +174,7 @@ fi
 
 # GPU detection
 log "Detecting GPU..."
-GPU_INFO=$(lspci -nnk | grep -Ei "VGA compatible controller|3D controller|Display controller")
+GPU_INFO=$(lspci -nnk | grep -Ei "VGA compatible controller|3D controller|Display controller" || true)
 HAS_NVIDIA=0
 HAS_INTEL=0
 HAS_AMD=0
@@ -180,322 +183,397 @@ echo "$GPU_INFO" | grep -qi intel && HAS_INTEL=1
 echo "$GPU_INFO" | grep -Eqi "amd|ati|radeon" && HAS_AMD=1
 log "GPU detected: NVIDIA=$HAS_NVIDIA Intel=$HAS_INTEL AMD=$HAS_AMD"
 
-# Configure xbps repositories
+# CPU microcode vendor (independent from GPU)
+CPU_VENDOR=$(grep -m1 vendor_id /proc/cpuinfo | awk '{print $3}')
+
+# Configure xbps repositories (main + nonfree + multilib/nonfree)
+REPO_BASE="https://repo-default.voidlinux.org"
+if [ -n "$MIRROR_COUNTRY" ]; then
+  CAND="https://repo-$(echo "$MIRROR_COUNTRY" | tr '[:upper:]' '[:lower:]').voidlinux.org"
+  if curl -fsI --max-time 10 "$CAND/current/" >/dev/null 2>&1; then
+    REPO_BASE="$CAND"
+  else
+    warn "Mirror '$MIRROR_COUNTRY' not reachable, using default."
+  fi
+fi
+
 mkdir -p /mnt/etc/xbps.d
 cat >/mnt/etc/xbps.d/00-repository-main.conf <<EOF
-repository=https://repo-default.voidlinux.org/current
+repository=${REPO_BASE}/current
+repository=${REPO_BASE}/current/nonfree
+repository=${REPO_BASE}/current/multilib
+repository=${REPO_BASE}/current/multilib/nonfree
 EOF
-
-if [ -n "$MIRROR_COUNTRY" ]; then
-  cat >/mnt/etc/xbps.d/01-repository-mirror.conf <<EOF
-repository=https://${MIRROR_COUNTRY}.mirror.voidlinux.org/current
-EOF
-fi
-
-# Base packages - verified Void package names
-BASE_PKGS="base-system ${KERNEL_PKG} linux-firmware ${KERNEL_PKG}-headers git wget curl bash-completion tree less usbutils elogind seatd dbus pipewire wireplumber libspa-bluetooth alsa-utils iwd bluez ntfs-3g exfatprogs dosfstools grub efibootmgr xorg-minimal xorg-input-drivers nerd-fonts noto-fonts-ttf noto-fonts-cjk noto-fonts-emoji libX11 libXft libXinerama freetype harfbuzz fontconfig make gcc pkg-config libxcb xcb-util xcb-util-wm libX11-devel libXft-devel libXinerama-devel freetype-devel harfbuzz-devel fontconfig-devel 7zip zip nnn bc grim slop maim ffmpeg chafa neovim fastfetch qutebrowser brightnessctl xinit xrandr xsetroot xinput xprop xwininfo xkill xdpyinfo xev setxkbmap xbacklight xclip xsel arandr autorandr mpv imv zathura zathura-pdf-mupdf keepassxc syncthing qbittorrent htop fastfetch tree unzip zip p7zip tar gzip bzip2 xz jq yq parallel moreutils entr tealdeer man-pages man-pages-posix cups cups-filters system-config-printer flatpak iwmenu bluetuith"
-
-# GPU-specific packages
-BASE_PKGS="$BASE_PKGS mesa-dri vulkan-loader"
-
-if [ "$HAS_INTEL" -eq 1 ]; then
-  log "Adding Intel GPU packages..."
-  BASE_PKGS="$BASE_PKGS mesa-vulkan-intel libva-intel-driver intel-video-accel xf86-video-intel intel-ucode"
-fi
-
-if [ "$HAS_AMD" -eq 1 ]; then
-  log "Adding AMD GPU packages..."
-  BASE_PKGS="$BASE_PKGS mesa-vulkan-radeon xf86-video-amdgpu amd-ucode"
-fi
-
-if [ "$HAS_NVIDIA" -eq 1 ]; then
-  log "Adding NVIDIA GPU packages..."
-  BASE_PKGS="$BASE_PKGS nvidia nvidia-libs-32bit nvidia-dkms opencl-nvidia"
-fi
-
-if [ "$ROOTFS" = "btrfs" ]; then
-  BASE_PKGS="$BASE_PKGS btrfs-progs"
-else
-  BASE_PKGS="$BASE_PKGS e2fsprogs"
-fi
 
 mkdir -p /mnt/var/db/xbps/keys
 cp /var/db/xbps/keys/* /mnt/var/db/xbps/keys/ 2>/dev/null || true
 
-log "Installing base system with GPU drivers..."
-XBPS_ARCH=x86_64 xbps-install -S -r /mnt $BASE_PKGS || error "xbps-install failed."
+log "Syncing repositories..."
+xbps-install -S -y -r /mnt || error "Repository sync failed."
 
+# Core packages: must exist, otherwise abort
+CORE_PKGS="base-system ${KERNEL_PKG} ${KERNEL_PKG}-headers linux-firmware grub dbus elogind iwd"
+[ "$BOOT_MODE" = "uefi" ] && CORE_PKGS="$CORE_PKGS grub-x86_64-efi efibootmgr"
+[ "$ROOTFS" = "btrfs" ] && CORE_PKGS="$CORE_PKGS btrfs-progs" || CORE_PKGS="$CORE_PKGS e2fsprogs"
+
+# Extra packages: missing ones are skipped with a warning
+EXTRA_PKGS="git wget curl bash-completion tree less usbutils seatd pipewire wireplumber libspa-bluetooth alsa-utils bluez ntfs-3g exfatprogs dosfstools
+xorg-minimal xorg-input-drivers noto-fonts-ttf noto-fonts-cjk noto-fonts-emoji font-firacode
+libX11 libXft libXinerama freetype harfbuzz fontconfig make gcc pkg-config libxcb xcb-util xcb-util-wm
+libX11-devel libXft-devel libXinerama-devel freetype-devel harfbuzz-devel fontconfig-devel
+7zip zip unzip p7zip tar gzip bzip2 xz nnn bc slop maim ffmpeg chafa neovim fastfetch qutebrowser brightnessctl
+xinit xrandr xsetroot xinput xprop xwininfo xkill xdpyinfo xev setxkbmap xbacklight xclip xsel arandr autorandr
+mpv imv zathura zathura-pdf-mupdf keepassxc syncthing qbittorrent htop jq yq parallel moreutils entr tealdeer
+man-pages man-pages-posix cups cups-filters system-config-printer flatpak iwmenu bluetuith
+tlp cronie acpid zramen wireguard-tools openresolv mesa-demos vulkan-tools mesa-dri vulkan-loader"
+
+# Nerd font: use whichever package name exists
+for nf in nerd-fonts-ttf nerd-fonts; do
+  if xbps-query -R -r /mnt "$nf" >/dev/null 2>&1; then
+    EXTRA_PKGS="$EXTRA_PKGS $nf"
+    break
+  fi
+done
+
+# CPU microcode
+if [ "$CPU_VENDOR" = "GenuineIntel" ]; then
+  EXTRA_PKGS="$EXTRA_PKGS intel-ucode"
+elif [ "$CPU_VENDOR" = "AuthenticAMD" ]; then
+  EXTRA_PKGS="$EXTRA_PKGS linux-firmware-amd" # AMD microcode lives here on Void
+fi
+
+# GPU-specific packages
+if [ "$HAS_INTEL" -eq 1 ]; then
+  log "Adding Intel GPU packages..."
+  EXTRA_PKGS="$EXTRA_PKGS mesa-vulkan-intel libva-intel-driver intel-media-driver intel-video-accel xf86-video-intel"
+fi
+
+if [ "$HAS_AMD" -eq 1 ]; then
+  log "Adding AMD GPU packages..."
+  EXTRA_PKGS="$EXTRA_PKGS mesa-vulkan-radeon xf86-video-amdgpu mesa-vaapi mesa-vdpau linux-firmware-amd"
+fi
+
+if [ "$HAS_NVIDIA" -eq 1 ]; then
+  log "Adding NVIDIA GPU packages..."
+  EXTRA_PKGS="$EXTRA_PKGS nvidia nvidia-libs-32bit nvidia-opencl"
+fi
+
+# Core check (fatal)
+for p in $CORE_PKGS; do
+  xbps-query -R -r /mnt "$p" >/dev/null 2>&1 || error "Core package not found: $p"
+done
+
+# Extra check (skip missing)
+FINAL_PKGS="$CORE_PKGS"
+for p in $(echo $EXTRA_PKGS | tr ' ' '\n' | sort -u); do
+  if xbps-query -R -r /mnt "$p" >/dev/null 2>&1; then
+    FINAL_PKGS="$FINAL_PKGS $p"
+  else
+    warn "Package not found, skipped: $p"
+  fi
+done
+
+log "Installing base system..."
+xbps-install -y -r /mnt $FINAL_PKGS || error "xbps-install failed."
+
+# fstab (Void has no fstabgen)
 log "Generating fstab..."
-fstabgen -U /mnt >/mnt/etc/fstab
+ROOT_UUID=$(blkid -s UUID -o value "$ROOT_PART")
+if [ "$ROOTFS" = "btrfs" ]; then
+  printf 'UUID=%s\t/\tbtrfs\tdefaults,noatime\t0 0\n' "$ROOT_UUID" >/mnt/etc/fstab
+else
+  printf 'UUID=%s\t/\text4\tdefaults,noatime\t0 1\n' "$ROOT_UUID" >/mnt/etc/fstab
+fi
+if [ "$BOOT_MODE" = "uefi" ]; then
+  EFI_UUID=$(blkid -s UUID -o value "$EFI_PART")
+  printf 'UUID=%s\t/boot/efi\tvfat\tdefaults,noatime\t0 2\n' "$EFI_UUID" >>/mnt/etc/fstab
+fi
 printf 'tmpfs\t/tmp\ttmpfs\trw,nosuid,nodev,size=10%%,mode=1777\t0 0\n' >>/mnt/etc/fstab
 
-# Copy suckless source for building in chroot
-mkdir -p /mnt/usr/local/src
+# Copy dotfiles (incl. suckless sources) into the target, without .git
+log "Copying dotfiles..."
+mkdir -p /mnt/root/dotfiles /mnt/usr/local/src
+tar -C "$SCRIPT_DIR" --exclude=.git -cf - . | tar -C /mnt/root/dotfiles -xf -
 for tool in dwm st dmenu; do
   if [ -d "$SCRIPT_DIR/$tool" ]; then
     cp -r "$SCRIPT_DIR/$tool" /mnt/usr/local/src/
   fi
 done
 
+# Variables for the chroot script (kept off the process list)
+{
+  printf 'ROOT_PASS=%q\n' "$ROOT_PASS"
+  printf 'USER_PASS=%q\n' "$USER_PASS"
+  printf 'USERNAME=%q\n' "$USERNAME"
+  printf 'HOSTNAME=%q\n' "$HOSTNAME"
+  printf 'TIMEZONE=%q\n' "$TIMEZONE"
+  printf 'LOCALE=%q\n' "$LOCALE"
+  printf 'KBLAYOUT=%q\n' "$KBLAYOUT"
+  printf 'DISK=%q\n' "$DISK"
+  printf 'BOOT_MODE=%q\n' "$BOOT_MODE"
+  printf 'HAS_NVIDIA=%q\n' "$HAS_NVIDIA"
+  printf 'HAS_INTEL=%q\n' "$HAS_INTEL"
+  printf 'HAS_AMD=%q\n' "$HAS_AMD"
+} >/mnt/root/install.env
+chmod 600 /mnt/root/install.env
+
 # Chroot setup script - COMPLETE system configuration
 cat >/mnt/root/chroot-setup.sh <<'CHROOT_EOF'
 #!/bin/bash
 set -e
+. /root/install.env
+
+log() { echo ">> $1"; }
+warn() { echo "!! $1" >&2; }
 
 enable_svc() {
-  if [ -d "/etc/runit/sv/$1" ]; then
-    ln -sf "/etc/runit/sv/$1" /etc/runit/runsvdir/default/
+  if [ -d "/etc/sv/$1" ]; then
+    ln -sf "/etc/sv/$1" /etc/runit/runsvdir/default/
+  else
+    warn "Service not found: $1"
   fi
 }
 
-log() { echo ">> $1"; }
-
 echo "root:${ROOT_PASS}" | chpasswd
 
-ln -sf /usr/share/zoneinfo/${TIMEZONE} /etc/localtime
-hwclock --systohc
+# Timezone, clock
+ln -sf "/usr/share/zoneinfo/${TIMEZONE}" /etc/localtime
+hwclock --systohc 2>/dev/null || true
 
-sed -i 's/#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
-sed -i "s/#${LOCALE} UTF-8/${LOCALE} UTF-8/" /etc/locale.gen
-locale-gen
-echo "LANG=${LOCALE}" > /etc/locale.conf
+# Locale (Void glibc uses libc-locales)
+if [ -f /etc/default/libc-locales ]; then
+  sed -i "s/^#\s*${LOCALE} UTF-8/${LOCALE} UTF-8/" /etc/default/libc-locales
+  xbps-reconfigure -f glibc-locales
+fi
+echo "LANG=${LOCALE}" >/etc/locale.conf
 
-echo "KEYMAP=${KBLAYOUT}" > /etc/vconsole.conf
+# Console keymap + timezone for rc.conf
+if [ -f /etc/rc.conf ]; then
+  sed -i "s|^#\?KEYMAP=.*|KEYMAP=\"${KBLAYOUT}\"|" /etc/rc.conf
+  sed -i "s|^#\?TIMEZONE=.*|TIMEZONE=\"${TIMEZONE}\"|" /etc/rc.conf
+fi
 
-echo "${HOSTNAME}" > /etc/hostname
-cat >> /etc/hosts <<HOSTS
+echo "${HOSTNAME}" >/etc/hostname
+cat >>/etc/hosts <<HOSTS
 127.0.0.1   localhost
 ::1         localhost
 127.0.1.1   ${HOSTNAME}.localdomain ${HOSTNAME}
 HOSTS
 
-useradd -m -G wheel,audio,video,lp,storage,network,video,render,kvm -s /bin/bash "${USERNAME}"
+# User: only add groups that exist on Void
+GROUPS_OK="wheel"
+for g in audio video input lp storage network kvm optical _seatd; do
+  getent group "$g" >/dev/null && GROUPS_OK="$GROUPS_OK,$g"
+done
+useradd -m -G "$GROUPS_OK" -s /bin/bash "${USERNAME}"
 echo "${USERNAME}:${USER_PASS}" | chpasswd
 
 mkdir -p /etc/sudoers.d
-cat > /etc/sudoers.d/10-wheel <<SUDOERS
+cat >/etc/sudoers.d/10-wheel <<'SUDOERS'
 %wheel ALL=(ALL:ALL) ALL
 Defaults env_keep += "HOME"
 SUDOERS
 chmod 0440 /etc/sudoers.d/10-wheel
 visudo -cf /etc/sudoers.d/10-wheel || exit 1
 
-# Enable services
+# iwd: built-in DHCP + DNS via resolvconf
+mkdir -p /etc/iwd
+cat >/etc/iwd/main.conf <<'IWDCONF'
+[General]
+EnableNetworkConfiguration=true
+
+[Network]
+NameResolvingService=resolvconf
+IWDCONF
+
+# Enable services (runit)
 mkdir -p /etc/runit/runsvdir/default
-for svc in dbus iwd bluetoothd cronie acpid tlp zramen; do
+for svc in dbus elogind iwd bluetoothd cronie acpid tlp zramen; do
   enable_svc "$svc"
 done
 
-make_svc dbus <<'DBUSSV'
-#!/bin/sh
-dbus-uuidgen --ensure=/etc/machine-id
-[ -d /run/dbus ] || install -m755 -g 81 -o 81 -d /run/dbus
-exec dbus-daemon --system --nofork --nopidfile 2>&1
-DBUSSV
-
-make_svc bluetoothd <<'BTDSV'
-#!/bin/sh
-sv check dbus >/dev/null || exit 1
-exec /usr/libexec/bluetooth/bluetoothd -n >/dev/null 2>&1
-BTDSV
-
-# Passwordless sudo for wheel
-cat > /etc/sudoers.d/20-wheel-nopass <<'SUDOERS'
-%wheel ALL=(ALL:ALL) NOPASSWD: ALL
-SUDOERS
-chmod 0440 /etc/sudoers.d/20-wheel-nopass
-visudo -cf /etc/sudoers.d/20-wheel-nopass || exit 1
-
 # Limits
-cat >> /etc/security/limits.conf <<LIMITSCONF
+cat >>/etc/security/limits.conf <<LIMITSCONF
 ${USERNAME}    soft    nofile  524288
 ${USERNAME}    hard    nofile  524288
 LIMITSCONF
 
 for pamfile in system-login su sudo; do
   if [ -f "/etc/pam.d/$pamfile" ] && ! grep -q 'pam_limits.so' "/etc/pam.d/$pamfile"; then
-    echo "session    required   pam_limits.so" >> "/etc/pam.d/$pamfile"
+    echo "session    required   pam_limits.so" >>"/etc/pam.d/$pamfile"
   fi
 done
 
-if ! grep -q '^fs.file-max' /etc/sysctl.d/99-filemax.conf 2>/dev/null; then
-  mkdir -p /etc/sysctl.d
-  echo 'fs.file-max = 2097152' > /etc/sysctl.d/99-filemax.conf
-fi
+mkdir -p /etc/sysctl.d
+echo 'fs.file-max = 2097152' >/etc/sysctl.d/99-filemax.conf
 
 # User directories
-mkdir -p \
-  "/home/${USERNAME}/Downloads" \
-  "/home/${USERNAME}/Music" \
-  "/home/${USERNAME}/Pictures" \
-  "/home/${USERNAME}/Videos"
+H="/home/${USERNAME}"
+mkdir -p "$H/Downloads" "$H/Music" "$H/Pictures" "$H/Videos" "$H/.config" "$H/.local/bin"
 
-# Ensure PATH includes ~/.local/bin
-if ! grep -q '.local/bin' "/home/${USERNAME}/.bashrc" 2>/dev/null; then
-  cat >> "/home/${USERNAME}/.bashrc" <<'LOCALBINPATH'
+# Build and install suckless tools
+for tool in dwm st dmenu; do
+  if [ -d "/usr/local/src/$tool" ]; then
+    log "Building $tool..."
+    (cd "/usr/local/src/$tool" && make clean install) 2>&1 | tee "/root/$tool-build.log"
+    rm -rf "/usr/local/src/$tool"
+  fi
+done
+
+# Install dotfiles
+log "Installing dotfiles..."
+DOT=/root/dotfiles
+
+# Accept both "name" (file) and "name/name" (dir containing file)
+src_of() {
+  if [ -f "$DOT/$1" ]; then echo "$DOT/$1"
+  elif [ -f "$DOT/$1/$1" ]; then echo "$DOT/$1/$1"
+  fi
+}
+
+for item in "$DOT"/*; do
+  [ -e "$item" ] || continue
+  name=$(basename "$item")
+  case "$name" in
+    dwm | st | dmenu | setup | README* | LICENSE* | *.md) continue ;;
+    scripts)
+      cp -r "$item"/. "$H/.local/bin/"
+      chmod +x "$H/.local/bin"/* 2>/dev/null || true
+      ;;
+    xinitrc)
+      f=$(src_of xinitrc)
+      [ -n "$f" ] || continue
+      cp "$f" "$H/.xinitrc"
+      sed -i "2a# Keyboard layout\nsetxkbmap \"${KBLAYOUT}\" \&\n" "$H/.xinitrc"
+      chmod +x "$H/.xinitrc"
+      ;;
+    bashrc)
+      f=$(src_of bashrc)
+      [ -n "$f" ] || continue
+      cp "$f" "$H/.bashrc"
+      ;;
+    bash_profile)
+      f=$(src_of bash_profile)
+      [ -n "$f" ] || continue
+      cp "$f" "$H/.bash_profile"
+      ;;
+    *)
+      rm -rf "$H/.config/$name"
+      cp -r "$item" "$H/.config/$name"
+      ;;
+  esac
+done
+
+# Fallback .bash_profile so .bashrc loads on login
+if [ ! -f "$H/.bash_profile" ]; then
+  echo '[[ -f "$HOME/.bashrc" ]] && source "$HOME/.bashrc"' >"$H/.bash_profile"
+fi
+
+# PATH for ~/.local/bin
+if ! grep -q '.local/bin' "$H/.bashrc" 2>/dev/null; then
+  cat >>"$H/.bashrc" <<'LOCALBINPATH'
 
 export PATH="$HOME/.local/bin:$PATH"
 LOCALBINPATH
 fi
 
-# Build and install dwm
-if [ -d /usr/local/src/dwm ]; then
-  log "Building dwm..."
-  cd /usr/local/src/dwm
-  make clean install 2>&1 | tee /root/dwm-build.log
-  cd /root
-  rm -rf /usr/local/src/dwm
-fi
-
-# Build and install st
-if [ -d /usr/local/src/st ]; then
-  log "Building st..."
-  cd /usr/local/src/st
-  make clean install 2>&1 | tee /root/st-build.log
-  cd /root
-  rm -rf /usr/local/src/st
-fi
-
-# Build and install dmenu
-if [ -d /usr/local/src/dmenu ]; then
-  log "Building dmenu..."
-  cd /usr/local/src/dmenu
-  make clean install 2>&1 | tee /root/dmenu-build.log
-  cd /root
-  rm -rf /usr/local/src/dmenu
-fi
-
-# Install dotfiles configs directly from source
-log "Installing dotfiles..."
-for dir in "$SCRIPT_DIR"/*/; do
-  [ -d "$dir" ] || continue
-  dname=$(basename "$dir")
-  case "$dname" in
-    scripts)
-      mkdir -p "/home/${USERNAME}/.local/bin"
-      cp -r "$dir"/* "/home/${USERNAME}/.local/bin/"
-      chmod +x "/home/${USERNAME}/.local/bin"/*
-      ;;
-    xinitrc)
-      cp "$dir" "/home/${USERNAME}/.xinitrc"
-      sed -i "2a# Keyboard layout\nsetxkbmap \"${KBLAYOUT}\" &\n" "/home/${USERNAME}/.xinitrc"
-      chmod +x "/home/${USERNAME}/.xinitrc"
-      ;;
-    bashrc)
-      cp "$dir" "/home/${USERNAME}/.bashrc"
-      if [ "$HAS_NVIDIA" -eq 1 ]; then
-        cat >> "/home/${USERNAME}/.bashrc" <<'NVIDIATEST'
-
-# NVIDIA Prime Render Offload
+# NVIDIA helpers (offload only through prime-run, not global env)
+if [ "$HAS_NVIDIA" -eq 1 ]; then
+  cat >/usr/local/bin/prime-run <<'PRIMERUN'
+#!/bin/sh
 export __NV_PRIME_RENDER_OFFLOAD=1
 export __GLX_VENDOR_LIBRARY_NAME=nvidia
 export __VK_LAYER_NV_optimus=NVIDIA_only
+exec "$@"
+PRIMERUN
+  chmod +x /usr/local/bin/prime-run
 
+  cat >>"$H/.bashrc" <<'NVIDIATEST'
+
+# NVIDIA Prime Render Offload helpers
 alias prime='prime-run'
-alias nvidia-smi='watch -n 1 nvidia-smi'
 
 nvidia-test() {
   prime-run glxinfo | grep "OpenGL renderer"
   prime-run vulkaninfo | grep "deviceName"
 }
 NVIDIATEST
-      fi
-      ;;
-    bash_profile)
-      cat > "/home/${USERNAME}/.bash_profile" <<'BASHPROFILE'
-export XKB_DEFAULT_LAYOUT="${KBLAYOUT}"
-[[ -f "$HOME/.bashrc" ]] && source "$HOME/.bashrc"
-BASHPROFILE
-      chmod +x "/home/${USERNAME}/.bash_profile"
-      ;;
-    *)
-      cp -r "$dir" "/home/${USERNAME}/.config/$dname"
-      ;;
-  esac
-done
-chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}/.config /home/${USERNAME}/.local /home/${USERNAME}/.bashrc /home/${USERNAME}/.xinitrc /home/${USERNAME}/.bash_profile 2>/dev/null || true
+fi
+
+chown -R "${USERNAME}:${USERNAME}" "$H"
 
 # Root configs symlink
 mkdir -p /root/.config
-for d in /home/${USERNAME}/.config/*/; do
+for d in "$H"/.config/*/; do
   [ -d "$d" ] || continue
   dname=$(basename "$d")
-  case "$dname" in
-    scripts) : ;;
-    *) rm -rf "/root/.config/$dname"; ln -sf "/home/${USERNAME}/.config/$dname" "/root/.config/$dname" ;;
-  esac
+  rm -rf "/root/.config/$dname"
+  ln -sf "$H/.config/$dname" "/root/.config/$dname"
 done
-chown -R root:root /root/.config
 
 # Sudoers for common operations
-cat > /etc/sudoers.d/30-vpn <<SUDOERS
+cat >/etc/sudoers.d/30-vpn <<'SUDOERS'
 %wheel ALL=(root) NOPASSWD: /usr/bin/wg-quick up *, /usr/bin/wg-quick down *
 SUDOERS
-chmod 0440 /etc/sudoers.d/30-vpn
-visudo -cf /etc/sudoers.d/30-vpn || true
-
-cat > /etc/sudoers.d/31-power <<'SUDOERS'
-%wheel ALL=(root) NOPASSWD: /usr/bin/tlp bat, /usr/bin/tlp ac, /usr/bin/tlp-stat *, /usr/sbin/tlp start, /usr/bin/prime-run *
+cat >/etc/sudoers.d/31-power <<'SUDOERS'
+%wheel ALL=(root) NOPASSWD: /usr/bin/tlp bat, /usr/bin/tlp ac, /usr/bin/tlp-stat *, /usr/bin/tlp start, /usr/local/bin/prime-run *
 SUDOERS
-chmod 0440 /etc/sudoers.d/31-power
-visudo -cf /etc/sudoers.d/31-power || true
-
-cat > /etc/sudoers.d/32-brightness <<'SUDOERS'
+cat >/etc/sudoers.d/32-brightness <<'SUDOERS'
 %wheel ALL=(root) NOPASSWD: /usr/bin/brightnessctl set *
 SUDOERS
-chmod 0440 /etc/sudoers.d/32-brightness
-visudo -cf /etc/sudoers.d/32-brightness || true
+for f in 30-vpn 31-power 32-brightness; do
+  chmod 0440 "/etc/sudoers.d/$f"
+  visudo -cf "/etc/sudoers.d/$f" || rm -f "/etc/sudoers.d/$f"
+done
 
-# NVIDIA driver setup (if hybrid GPU detected)
-if [ "$HAS_NVIDIA" -eq 1 ] && ([ "$HAS_INTEL" -eq 1 ] || [ "$HAS_AMD" -eq 1 ]); then
+# NVIDIA driver setup (hybrid GPU)
+if [ "$HAS_NVIDIA" -eq 1 ] && { [ "$HAS_INTEL" -eq 1 ] || [ "$HAS_AMD" -eq 1 ]; }; then
   log "Configuring NVIDIA driver..."
 
-  cat > /etc/modprobe.d/nvidia.conf <<'NVMEOF'
+  cat >/etc/modprobe.d/nvidia.conf <<'NVMEOF'
 options nvidia NVreg_DynamicPowerManagement=0x02 NVreg_EnableGpuFirmware=0
 NVMEOF
 
-  cat > /etc/modules-load.d/nvidia.conf <<'NVMODULES'
-nvidia
-nvidia_modeset
-nvidia_uvm
-nvidia_drm
-NVMODULES
-
   mkdir -p /etc/dracut.conf.d
-  cat > /etc/dracut.conf.d/10-nvidia.conf <<'DRACUTEOF'
+  cat >/etc/dracut.conf.d/10-nvidia.conf <<'DRACUTEOF'
 add_drivers+=" nvidia nvidia_modeset nvidia_uvm nvidia_drm "
-force_drivers+=" nvidia nvidia_modeset nvidia_uvm nvidia_drm "
 DRACUTEOF
-
-  dracut --regenerate-all --force || true
 fi
 
-# GRUB
-sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=3/' /etc/default/grub
-sed -i 's/^GRUB_TIMEOUT_STYLE=.*/GRUB_TIMEOUT_STYLE=menu/' /etc/default/grub 2>/dev/null || echo 'GRUB_TIMEOUT_STYLE=menu' >> /etc/default/grub
-sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT=saved/' /etc/default/grub 2>/dev/null || echo 'GRUB_DEFAULT=saved' >> /etc/default/grub
-sed -i 's/^GRUB_SAVEDEFAULT=.*/GRUB_SAVEDEFAULT=true/' /etc/default/grub 2>/dev/null || echo 'GRUB_SAVEDEFAULT=true' >> /etc/default/grub
+# Configure all packages (generates initramfs via dracut)
+log "Reconfiguring packages (initramfs)..."
+xbps-reconfigure -fa
 
-if [ -d /sys/firmware/efi/efivars ]; then
-  grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Void
+# GRUB
+grep -q '^GRUB_TIMEOUT=' /etc/default/grub \
+  && sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=3/' /etc/default/grub \
+  || echo 'GRUB_TIMEOUT=3' >>/etc/default/grub
+grep -q '^GRUB_TIMEOUT_STYLE=' /etc/default/grub \
+  && sed -i 's/^GRUB_TIMEOUT_STYLE=.*/GRUB_TIMEOUT_STYLE=menu/' /etc/default/grub \
+  || echo 'GRUB_TIMEOUT_STYLE=menu' >>/etc/default/grub
+grep -q '^GRUB_DEFAULT=' /etc/default/grub \
+  && sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT=saved/' /etc/default/grub \
+  || echo 'GRUB_DEFAULT=saved' >>/etc/default/grub
+grep -q '^GRUB_SAVEDEFAULT=' /etc/default/grub \
+  && sed -i 's/^GRUB_SAVEDEFAULT=.*/GRUB_SAVEDEFAULT=true/' /etc/default/grub \
+  || echo 'GRUB_SAVEDEFAULT=true' >>/etc/default/grub
+
+if [ "$BOOT_MODE" = "uefi" ]; then
+  grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Void \
+    || grub-install --target=x86_64-efi --efi-directory=/boot/efi --removable
 else
-  grub-install --target=i386-pc ${DISK}
+  grub-install --target=i386-pc "${DISK}"
 fi
 grub-mkconfig -o /boot/grub/grub.cfg
 
-chown -R ${USERNAME}:${USERNAME} "/home/${USERNAME}"
-
-# Set default theme
+# Default theme
 log "Setting default theme (Catppuccin Mocha)..."
-su - ${USERNAME} -c "mkdir -p ~/.config/themes && echo 'mocha' > ~/.config/themes/current"
-su - ${USERNAME} -c "PATH=\$HOME/.local/bin:\$PATH theme-switcher mocha" 2>/dev/null || true
+su - "${USERNAME}" -c "mkdir -p ~/.config/themes && echo 'mocha' > ~/.config/themes/current"
+su - "${USERNAME}" -c 'PATH=$HOME/.local/bin:$PATH theme-switcher mocha' 2>/dev/null || true
 
 # Cleanup
-rm -f /etc/sudoers.d/20-wheel-nopass
-rm -rf /root/dwm-build.log /root/st-build.log /root/dmenu-build.log
-xbps-remove -Oo 2>/dev/null || true
-xbps-install -S -y ca-certificates 2>/dev/null || true
-
+rm -f /root/*-build.log
+xbps-remove -Oo -y 2>/dev/null || true
 CHROOT_EOF
 
 chmod +x /mnt/root/chroot-setup.sh
@@ -518,24 +596,15 @@ fi
 
 # Chroot and run setup
 log "Entering chroot..."
-mount --bind /dev /mnt/dev
-mount --bind /proc /mnt/proc
-mount --bind /sys /mnt/sys
+for d in dev proc sys; do
+  mount --rbind "/$d" "/mnt/$d"
+  mount --make-rslave "/mnt/$d"
+done
 mount --bind /run /mnt/run
 
-cp /mnt/root/chroot-setup.sh /mnt/root/chroot-setup.sh.bak
+chroot /mnt /bin/bash /root/chroot-setup.sh
 
-cat >/mnt/root/run-chroot.sh <<'RUNCHROOT'
-#!/bin/bash
-ROOT_PASS="$1" USERNAME="$2" USER_PASS="$3" TIMEZONE="$4" LOCALE="$5" KBLAYOUT="$6" HOSTNAME="$7" DISK="$8" HAS_NVIDIA="$9" HAS_INTEL="${10}" HAS_AMD="${11}" KBLAYOUT="${12}" /bin/bash /root/chroot-setup.sh
-RUNCHROOT
-chmod +x /mnt/root/run-chroot.sh
-
-chroot /mnt /root/run-chroot.sh "$ROOT_PASS" "$USERNAME" "$USER_PASS" "$TIMEZONE" "$LOCALE" "$KBLAYOUT" "$HOSTNAME" "$DISK" "$HAS_NVIDIA" "$HAS_INTEL" "$HAS_AMD" "$KBLAYOUT"
-
-rm /mnt/root/run-chroot.sh /mnt/root/chroot-setup.sh /mnt/root/chroot-setup.sh.bak
-
-umount /mnt/run /mnt/sys /mnt/proc /mnt/dev 2>/dev/null || true
+rm -rf /mnt/root/chroot-setup.sh /mnt/root/install.env /mnt/root/dotfiles
 
 echo
 echo "Reboot into your new Void Linux system."
