@@ -11,6 +11,10 @@ log() { echo ">> $1"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Install required tools for partitioning
+log "Installing required tools..."
+xbps-install -S parted
+
 chattr -i /etc/resolv.conf 2>/dev/null || true
 
 # Detect boot mode
