@@ -1,0 +1,25 @@
+#!/bin/sh
+
+SAVE_DIR="$HOME/Pictures/Screenshots"
+mkdir -p "$SAVE_DIR"
+FILEPATH="$SAVE_DIR/screenshot_$(date +'%Y-%m-%d_%H-%M-%S').png"
+MODE="${1:-full}"
+
+if [ "$MODE" = "area" ]; then
+    slop -f "%x %y %w %h" > /tmp/selection.txt 2>/dev/null
+    if [ $? -eq 0 ] && [ -s /tmp/selection.txt ]; then
+        read -r x y w h < /tmp/selection.txt
+        maim -g "${w}x${h}+${x}+${y}" "$FILEPATH"
+    else
+        rm -f /tmp/selection.txt
+        exit 1
+    fi
+    rm -f /tmp/selection.txt
+else
+    maim "$FILEPATH"
+fi
+
+if [ -f "$FILEPATH" ]; then
+    xclip -selection clipboard -t image/png < "$FILEPATH"
+    notify-send -a Screenshot "Screenshot" "Saved to $FILEPATH"
+fi

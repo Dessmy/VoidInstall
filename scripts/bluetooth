@@ -1,0 +1,51 @@
+#!/bin/bash
+# ~/.local/bin/dmenu-bluetooth - Bluetooth menu via bluetuith (TUI) or bluetoothctl
+# Requires: bluetuith (from void-repo-nonfree) or bluez
+
+# Check if bluetooth service is running
+if ! sv status bluetoothd >/dev/null 2>&1; then
+    notify-send "Bluetooth" "bluetoothd service not running" -u critical
+    exit 1
+fi
+
+# Try bluetuith first (TUI), fallback to bluetoothctl + dmenu
+if command -v bluetuith >/dev/null 2>&1; then
+    st -c "bluetuith" -e bluetuith
+else
+    # Simple bluetoothctl + dmenu menu
+    choice=$(printf "Scan\nConnect\nDisconnect\nPower On\nPower Off\nPaired Devices\nRemove Device" | dmenu -i -l 10 -p "Bluetooth:")
+    [ -z "$choice" ] && exit 0
+
+    case "$choice" in
+        "Scan")
+            notify-send "Bluetooth" "Scanning..."
+            bluetoothctl scan on
+            sleep 5
+            bluetoothctl scan off
+            bluetoothctl devices | dmenu -i -l 15 -p "Devices:"
+            ;;
+        "Connect")
+            dev=$(bluetoothctl devices | dmenu -i -l 15 -p "Connect to:")
+            [ -n "$dev" ] && bluetoothctl connect "$(echo "$dev" | awk '{print $2}')"
+            ;;
+        "Disconnect")
+            dev=$(bluetoothctl devices Connected | dmenu -i -l 15 -p "Disconnect:")
+            [ -n "$dev" ] && bluetoothctl disconnect "$(echo "$dev" | awk '{print $2}')"
+            ;;
+        "Power On")
+            bluetoothctl power on
+            notify-send "Bluetooth" "Powered on"
+            ;;
+        "Power Off")
+            bluetoothctl power off
+            notify-send "Bluetooth" "Powered off"
+            ;;
+        "Paired Devices")
+            bluetoothctl paired-devices | dmenu -i -l 15 -p "Paired:"
+            ;;
+        "Remove Device")
+            dev=$(bluetoothctl paired-devices | dmenu -i -l 15 -p "Remove:")
+            [ -n "$dev" ] && bluetoothctl remove "$(echo "$dev" | awk '{print $2}')"
+            ;;
+    esac
+fi

@@ -1,0 +1,45 @@
+#!/bin/sh
+set -e
+
+WALLPAPER_DIR="$HOME/Pictures/Wallpapers"
+CACHE_FILE="$HOME/.cache/current_wallpaper"
+DIRECTION="${1:-next}"
+
+if [ ! -d "$WALLPAPER_DIR" ]; then
+    notify-send -u critical "Wallpaper Error" "Directory $WALLPAPER_DIR not found"
+    exit 1
+fi
+
+cd "$WALLPAPER_DIR"
+
+list=$(find . -maxdepth 1 -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" \) \
+    | sed 's|^\./||' | sort)
+
+if [ -z "$list" ]; then
+    notify-send -u critical "Wallpaper Error" "No wallpapers found in $WALLPAPER_DIR"
+    exit 1
+fi
+
+current=""
+[ -f "$CACHE_FILE" ] && current=$(basename "$(cat "$CACHE_FILE")")
+
+if [ "$DIRECTION" = "prev" ]; then
+    ordered=$(printf '%s\n' "$list" | sort -r)
+else
+    ordered=$list
+fi
+
+target=$(printf '%s\n' "$ordered" | awk -v cur="$current" '
+    $0 == cur { found=1; next }
+    found && !picked { print; picked=1 }
+    !first { first=$0 }
+    END { if (!picked) print first }
+')
+
+FULL_PATH="$WALLPAPER_DIR/$target"
+
+# Set wallpaper with feh
+feh --bg-fill "$FULL_PATH"
+
+echo "$FULL_PATH" > "$CACHE_FILE"
+notify-send -a Wallpaper -i "$FULL_PATH" "Wallpaper Changed" "Now showing: $target"

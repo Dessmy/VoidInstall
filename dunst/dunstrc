@@ -1,0 +1,122 @@
+# dunst configuration - Void Linux X11
+# Gruvbox Dark theme matching dwm/st
+# Replaces mako from Wayland setup
+
+[global]
+    # Monitor to display notifications on
+    monitor = 0
+    # Follow keyboard focus
+    follow = keyboard
+    # Geometry: width x height +/- x +/- y
+    geometry = "350x5-20+50"
+    # Show age of notification if older than show_age_threshold
+    show_age_threshold = 60
+    # Alignment: left, center, right
+    alignment = left
+    # Minimum gap between notifications
+    gap_size = 10
+    # Shrink notifications to fit screen
+    shrink = no
+    # Transparency (0-255)
+    transparency = 15
+    # Corner radius
+    corner_radius = 6
+    # Ignore D-Bus close messages
+    ignore_dbusclose = no
+    # Stack notifications: up (newest on top) or down
+    stack_duplicates = true
+    # Hide duplicate count
+    hide_duplicate_count = false
+    # Show indicators for URLs and actions
+    show_indicators = yes
+    # Icon position: off, left, right
+    icon_position = left
+    # Minimum icon size
+    min_icon_size = 32
+    # Maximum icon size
+    max_icon_size = 64
+    # Icon path
+    icon_path = /usr/share/icons/Adwaita:/usr/share/icons/hicolor:/usr/share/pixmaps
+    # Sticky history
+    sticky_history = yes
+    # History length
+    history_length = 20
+    # D-Bus service name
+    dbus_service = org.freedesktop.Notifications
+    # Word wrap
+    word_wrap = yes
+    # Ignore newline in notifications
+    ignore_newline = no
+    # Separator color
+    separator_color = frame
+    # Padding
+    padding = 12
+    # Horizontal padding
+    horizontal_padding = 12
+    # Frame
+    frame_width = 2
+    frame_color = "#8ec07c"
+    # Separator height
+    separator_height = 2
+    # Line height
+    line_height = 0
+    # Startup notification
+    startup_notification = false
+    # Verbosity: mesh, info, warning, error
+    verbosity = info
+
+[frame]
+    width = 2
+    color = "#8ec07c"
+
+[separator]
+    color = frame
+    height = 2
+
+# Gruvbox Dark colors
+[urgency_low]
+    background = "#282828"
+    foreground = "#ebdbb2"
+    frame_color = "#504945"
+    timeout = 10
+    icon = dialog-information
+
+[urgency_normal]
+    background = "#282828"
+    foreground = "#ebdbb2"
+    frame_color = "#8ec07c"
+    timeout = 10
+    icon = dialog-information
+
+[urgency_critical]
+    background = "#282828"
+    foreground = "#fb4934"
+    frame_color = "#fb4934"
+    timeout = 0
+    icon = dialog-error
+
+# Custom rules
+[rule]
+    # Disable notifications for specific apps
+    # appname = "firefox", summary = "*", format = "<b>%s</b>\n%b"
+
+[rule]
+    # Make notification from Dunstify persistent
+    appname = "dunstify"
+    timeout = 0
+
+[rule]
+    # Volume/brightness notifications
+    appname = "pamixer"
+    format = "<b>%s</b>\n%b"
+    timeout = 3
+
+[rule]
+    appname = "brightnessctl"
+    format = "<b>%s</b>\n%b"
+    timeout = 3
+
+# Experimental features
+[experimental]
+    # Per-monitor DPI scaling
+    per_monitor_dpi = false

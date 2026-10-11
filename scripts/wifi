@@ -1,0 +1,16 @@
+#!/bin/bash
+# ~/.local/bin/dmenu-wifi - WiFi menu via iwmenu (dmenu-based)
+# Requires: iwmenu (from void-repo-nonfree)
+
+# Check if iwd is running
+if ! systemctl --user is-active iwd >/dev/null 2>&1 && ! sv status iwd >/dev/null 2>&1; then
+    notify-send "WiFi" "iwd service not running" -u critical
+    exit 1
+fi
+
+# Get wireless interface
+IFACE=$(iwctl device list | awk '/station/ {print $2}' | head -1)
+[ -z "$IFACE" ] && IFACE="wlan0"
+
+# Run iwmenu
+iwmenu -i "$IFACE" -d "dmenu -i -l 15 -p 'WiFi:'"

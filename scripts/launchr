@@ -1,0 +1,57 @@
+#!/bin/bash
+
+APP_DIRS="/usr/share/applications $HOME/.local/share/applications"
+
+list_apps() {
+  for dir in $APP_DIRS; do
+    [ -d "$dir" ] || continue
+    find "$dir" -maxdepth 1 -name '*.desktop' -type f
+  done | xargs -r awk -F'=' '
+    function flush() {
+      if (!nodisplay && name != "" && exec_raw != "") {
+        gsub(/%[fFuUdDnNickvm]/, "", exec_raw)
+        print name "\t" exec_raw
+      }
+    }
+    FNR==1 { if (NR>1) flush(); name=""; exec_raw=""; nodisplay=0 }
+    /^NoDisplay=true/ { nodisplay=1 }
+    /^Name=/ && name=="" { name=substr($0, index($0,"=")+1) }
+    /^Exec=/ && exec_raw=="" { exec_raw=substr($0, index($0,"=")+1) }
+    END { flush() }
+  ' | sort -u -t"$(printf '\t')" -k1,1
+}
+
+calc_eval() {
+  q="$1"
+  [ -z "$q" ] && return 0
+
+  case "$q" in
+    *[!0-9+\-*/^\(\).\ ]*) return 0 ;;
+  esac
+  case "$q" in
+    *[0-9]*) : ;;
+    *) return 0 ;;
+  esac
+
+  result=$(printf '%s\n' "$q" | bc -l 2>/dev/null) || return 0
+  [ -z "$result" ] && return 0
+  printf '%s\n' "$result"
+}
+
+apps=$(list_apps)
+
+chosen=$(printf '%s\n' "$apps" | cut -f1 | dmenu -l 15 -p "Launch>" "$@")
+[ -z "$chosen" ] && exit 0
+
+cmd=$(printf '%s\n' "$apps" | awk -F'\t' -v n="$chosen" '$1==n {print $2; exit}')
+
+if [ -z "$cmd" ]; then
+  result=$(calc_eval "$chosen")
+  if [ -n "$result" ]; then
+    printf '%s' "$result" | xclip -selection clipboard
+    notify-send -a launchr 'Calculator' "$chosen = $result (copied)"
+  fi
+  exit 0
+fi
+
+setsid -f sh -c "$cmd" >/dev/null 2>&1

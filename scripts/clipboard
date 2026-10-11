@@ -1,0 +1,8 @@
+#!/bin/bash
+
+choice=$(cliphist list | dmenu -l 15 -p "Clipboard>" "$@")
+[ -z "$choice" ] && exit 0
+
+printf '%s' "$choice" | cliphist decode | xclip -selection clipboard
+
+notify-send -a clipboard 'Clipboard' 'Item copied'

@@ -1,0 +1,33 @@
+#!/bin/sh
+
+SAVE_DIR="$HOME/Videos/Recordings"
+mkdir -p "$SAVE_DIR"
+FILEPATH="$SAVE_DIR/recording_$(date +'%Y-%m-%d_%H-%M-%S').mp4"
+MODE="${1:-full}"
+PID_FILE="/tmp/ffmpeg-record.pid"
+
+if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+    kill "$(cat "$PID_FILE")"
+    rm -f "$PID_FILE"
+    notify-send -a Recording "Recording" "Stopped and saved to $FILEPATH"
+    exit 0
+fi
+
+# Get screen resolution
+RES=$(xrandr | grep '*' | head -1 | awk '{print $1}')
+
+if [ "$MODE" = "area" ]; then
+    GEOM=$(slop -f "%x %y %w %h" 2>/dev/null)
+    if [ -z "$GEOM" ]; then
+        exit 1
+    fi
+    read -r x y w h <<<"$GEOM"
+    ffmpeg -f x11grab -framerate 60 -video_size "${w}x${h}" -i ":0.0+${x},${y}" \
+        -c:v libx264 -preset ultrafast -crf 23 -pix_fmt yuv420p "$FILEPATH" &
+else
+    ffmpeg -f x11grab -framerate 60 -video_size "$RES" -i ":0.0" \
+        -c:v libx264 -preset ultrafast -crf 23 -pix_fmt yuv420p "$FILEPATH" &
+fi
+
+echo $! > "$PID_FILE"
+notify-send -a Recording "Recording" "Started (press Super+r again to stop)"
