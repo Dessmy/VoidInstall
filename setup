@@ -39,32 +39,17 @@ HOSTNAME=${HOSTNAME:-void}
 read -rp "New username [user]: " USERNAME
 USERNAME=${USERNAME:-user}
 
-ask_password() { # prompt-name -> sets REPLY_PASS (hidden, typed twice)
-  local p1 p2
-  while true; do
-    read -rsp "$1 password: " p1
-    echo
-    read -rsp "Retype $1 password: " p2
-    echo
-    if [ -n "$p1" ] && [ "$p1" = "$p2" ]; then
-      REPLY_PASS="$p1"
-      return 0
-    fi
-    echo "Passwords don't match or empty, try again."
+get_hash() { # asks twice, hidden; prints the password hash (openssl is on the live ISO)
+  local a b
+  until [ -n "$a" ] && [ "$a" = "$b" ]; do
+    read -rsp "Password for $1: " a; echo >&2
+    read -rsp "Retype password: " b; echo >&2
+    [ "$a" = "$b" ] || echo "Passwords don't match, try again." >&2
   done
+  printf '%s' "$a" | openssl passwd -6 -stdin
 }
-
-ask_password "Root"
-ROOT_PASS="$REPLY_PASS"
-ask_password "$USERNAME"
-USER_PASS="$REPLY_PASS"
-unset REPLY_PASS
-
-# Hash on the live system (openssl is already on the live ISO); only hashes go to the target
-command -v openssl >/dev/null || error "openssl not found on the live system."
-ROOT_HASH=$(printf '%s' "$ROOT_PASS" | openssl passwd -6 -stdin) || error "Hashing failed."
-USER_HASH=$(printf '%s' "$USER_PASS" | openssl passwd -6 -stdin) || error "Hashing failed."
-unset ROOT_PASS USER_PASS
+ROOT_HASH=$(get_hash root)
+USER_HASH=$(get_hash "$USERNAME")
 
 read -rp "Timezone [UTC]: " TIMEZONE
 TIMEZONE=${TIMEZONE:-UTC}
@@ -389,11 +374,7 @@ enable_svc() {
   fi
 }
 
-set_hash() { # user hash
-  usermod -p "$2" "$1"
-  passwd -S "$1" | grep -q " P " || { echo "!! password for $1 not set" >&2; exit 1; }
-}
-set_hash root "$ROOT_HASH"
+usermod -p "$ROOT_HASH" root
 
 # Full disk encryption (handbook: FDE guide)
 if [ "$ENCRYPT" -eq 1 ]; then
@@ -453,7 +434,10 @@ for g in audio video input lp storage network kvm optical _seatd; do
   getent group "$g" >/dev/null && GROUPS_OK="$GROUPS_OK,$g"
 done
 useradd -m -G "$GROUPS_OK" -s /bin/bash "${USERNAME}"
-set_hash "${USERNAME}" "$USER_HASH"
+usermod -p "$USER_HASH" "${USERNAME}"
+for u in root "${USERNAME}"; do
+  passwd -S "$u" | grep -q " P " || { echo "!! password for $u not set" >&2; exit 1; }
+done
 
 mkdir -p /etc/sudoers.d
 cat >/etc/sudoers.d/10-wheel <<'SUDOERS'
