@@ -39,6 +39,16 @@ HOSTNAME=${HOSTNAME:-void}
 read -rp "New username [user]: " USERNAME
 USERNAME=${USERNAME:-user}
 
+read -rp "Root password (shown on screen, typed once): " ROOT_PASS
+read -rp "Password for ${USERNAME} (shown on screen, typed once): " USER_PASS
+[ -n "$ROOT_PASS" ] && [ -n "$USER_PASS" ] || error "Passwords cannot be empty."
+
+# Hash on the live system (openssl is already on the live ISO); only hashes go to the target
+command -v openssl >/dev/null || error "openssl not found on the live system."
+ROOT_HASH=$(printf '%s' "$ROOT_PASS" | openssl passwd -6 -stdin) || error "Hashing failed."
+USER_HASH=$(printf '%s' "$USER_PASS" | openssl passwd -6 -stdin) || error "Hashing failed."
+unset ROOT_PASS USER_PASS
+
 read -rp "Timezone [UTC]: " TIMEZONE
 TIMEZONE=${TIMEZONE:-UTC}
 LOCALE="en_US.UTF-8"
@@ -332,6 +342,8 @@ tar -C "$SCRIPT_DIR" --exclude=.git -cf - . | tar -C /mnt/root/dotfiles -xf -
   printf 'TIMEZONE=%q\n' "$TIMEZONE"
   printf 'LOCALE=%q\n' "$LOCALE"
   printf 'KBLAYOUT=%q\n' "$KBLAYOUT"
+  printf 'ROOT_HASH=%q\n' "$ROOT_HASH"
+  printf 'USER_HASH=%q\n' "$USER_HASH"
   printf 'DISK=%q\n' "$DISK"
   printf 'ENCRYPT=%q\n' "$ENCRYPT"
   printf 'CRYPT_PART=%q\n' "${CRYPT_PART:-}"
@@ -360,14 +372,11 @@ enable_svc() {
   fi
 }
 
-set_pw() {
-  until passwd "$1"; do
-    echo "!! Try again."
-  done
+set_hash() { # user hash
+  usermod -p "$2" "$1"
+  passwd -S "$1" | grep -q " P " || { echo "!! password for $1 not set" >&2; exit 1; }
 }
-echo
-echo "=== Set the root password ==="
-set_pw root
+set_hash root "$ROOT_HASH"
 
 # Full disk encryption (handbook: FDE guide)
 if [ "$ENCRYPT" -eq 1 ]; then
@@ -427,9 +436,7 @@ for g in audio video input lp storage network kvm optical _seatd; do
   getent group "$g" >/dev/null && GROUPS_OK="$GROUPS_OK,$g"
 done
 useradd -m -G "$GROUPS_OK" -s /bin/bash "${USERNAME}"
-echo
-echo "=== Set the password for ${USERNAME} ==="
-set_pw "${USERNAME}"
+set_hash "${USERNAME}" "$USER_HASH"
 
 mkdir -p /etc/sudoers.d
 cat >/etc/sudoers.d/10-wheel <<'SUDOERS'
@@ -671,7 +678,7 @@ fi
 # Chroot and run setup (handbook: xchroot from xtools)
 log "Entering chroot..."
 echo
-echo ">> You will be asked to set the root and user passwords during this step."
+[ "$ENCRYPT" -eq 1 ] && echo ">> You will be asked for the LUKS passphrase once more (keyfile setup)."
 xchroot /mnt /bin/bash /root/chroot-setup.sh
 
 rm -rf /mnt/root/chroot-setup.sh /mnt/root/install.env /mnt/root/dotfiles
