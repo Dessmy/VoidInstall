@@ -9,6 +9,21 @@ error() {
 log() { echo ">> $1"; }
 warn() { echo "!! $1" >&2; }
 
+# Test a password on the live system now, so problems show up at the prompt
+check_password() {
+  local pw="$1" ok=1
+  userdel -f __pwtest 2>/dev/null || true
+  useradd -M -s /bin/false __pwtest 2>/dev/null || true
+  echo "__pwtest:${pw}" | chpasswd 2>/dev/null || ok=0
+  passwd -S __pwtest 2>/dev/null | grep -q " P " || ok=0
+  userdel -f __pwtest 2>/dev/null || true
+  if [ "$ok" -ne 1 ]; then
+    echo "Password rejected by the system, try a different one."
+    return 1
+  fi
+  return 0
+}
+
 [ "$(id -u)" -eq 0 ] || error "Run as root: sudo ./setup"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -44,8 +59,11 @@ while true; do
   echo
   read -rsp "Confirm root password: " ROOT_PASS2
   echo
-  [ "$ROOT_PASS" = "$ROOT_PASS2" ] && [ -n "$ROOT_PASS" ] && break
-  echo "Passwords don't match or empty"
+  if [ "$ROOT_PASS" = "$ROOT_PASS2" ] && [ -n "$ROOT_PASS" ]; then
+    check_password "$ROOT_PASS" && break
+  else
+    echo "Passwords don't match or empty"
+  fi
 done
 
 while true; do
@@ -53,8 +71,11 @@ while true; do
   echo
   read -rsp "Confirm password for ${USERNAME}: " USER_PASS2
   echo
-  [ "$USER_PASS" = "$USER_PASS2" ] && [ -n "$USER_PASS" ] && break
-  echo "Passwords don't match or empty"
+  if [ "$USER_PASS" = "$USER_PASS2" ] && [ -n "$USER_PASS" ]; then
+    check_password "$USER_PASS" && break
+  else
+    echo "Passwords don't match or empty"
+  fi
 done
 
 read -rp "Timezone [UTC]: " TIMEZONE
