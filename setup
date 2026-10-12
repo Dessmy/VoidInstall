@@ -39,9 +39,26 @@ HOSTNAME=${HOSTNAME:-void}
 read -rp "New username [user]: " USERNAME
 USERNAME=${USERNAME:-user}
 
-read -rp "Root password (shown on screen, typed once): " ROOT_PASS
-read -rp "Password for ${USERNAME} (shown on screen, typed once): " USER_PASS
-[ -n "$ROOT_PASS" ] && [ -n "$USER_PASS" ] || error "Passwords cannot be empty."
+ask_password() { # prompt-name -> sets REPLY_PASS (hidden, typed twice)
+  local p1 p2
+  while true; do
+    read -rsp "$1 password: " p1
+    echo
+    read -rsp "Retype $1 password: " p2
+    echo
+    if [ -n "$p1" ] && [ "$p1" = "$p2" ]; then
+      REPLY_PASS="$p1"
+      return 0
+    fi
+    echo "Passwords don't match or empty, try again."
+  done
+}
+
+ask_password "Root"
+ROOT_PASS="$REPLY_PASS"
+ask_password "$USERNAME"
+USER_PASS="$REPLY_PASS"
+unset REPLY_PASS
 
 # Hash on the live system (openssl is already on the live ISO); only hashes go to the target
 command -v openssl >/dev/null || error "openssl not found on the live system."
