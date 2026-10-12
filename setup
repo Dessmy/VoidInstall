@@ -9,29 +9,14 @@ error() {
 log() { echo ">> $1"; }
 warn() { echo "!! $1" >&2; }
 
-# Test a password on the live system now, so problems show up at the prompt
-check_password() {
-  local pw="$1" ok=1
-  userdel -f __pwtest 2>/dev/null || true
-  useradd -M -s /bin/false __pwtest 2>/dev/null || true
-  echo "__pwtest:${pw}" | chpasswd 2>/dev/null || ok=0
-  passwd -S __pwtest 2>/dev/null | grep -q " P " || ok=0
-  userdel -f __pwtest 2>/dev/null || true
-  if [ "$ok" -ne 1 ]; then
-    echo "Password rejected by the system, try a different one."
-    return 1
-  fi
-  return 0
-}
-
 [ "$(id -u)" -eq 0 ] || error "Run as root: sudo ./setup"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export XBPS_ARCH=x86_64
 
 # Install required tools for partitioning
-log "Installing required tools..."
-xbps-install -Sy parted || error "Cannot install parted (check network)."
+log "Installing required tools (xtools: xgenfstab, xchroot)..."
+xbps-install -Sy xtools || error "Cannot install xtools (check network)."
 
 chattr -i /etc/resolv.conf 2>/dev/null || true
 
@@ -54,30 +39,6 @@ HOSTNAME=${HOSTNAME:-void}
 read -rp "New username [user]: " USERNAME
 USERNAME=${USERNAME:-user}
 
-while true; do
-  read -rsp "Root password: " ROOT_PASS
-  echo
-  read -rsp "Confirm root password: " ROOT_PASS2
-  echo
-  if [ "$ROOT_PASS" = "$ROOT_PASS2" ] && [ -n "$ROOT_PASS" ]; then
-    check_password "$ROOT_PASS" && break
-  else
-    echo "Passwords don't match or empty"
-  fi
-done
-
-while true; do
-  read -rsp "Password for ${USERNAME}: " USER_PASS
-  echo
-  read -rsp "Confirm password for ${USERNAME}: " USER_PASS2
-  echo
-  if [ "$USER_PASS" = "$USER_PASS2" ] && [ -n "$USER_PASS" ]; then
-    check_password "$USER_PASS" && break
-  else
-    echo "Passwords don't match or empty"
-  fi
-done
-
 read -rp "Timezone [UTC]: " TIMEZONE
 TIMEZONE=${TIMEZONE:-UTC}
 LOCALE="en_US.UTF-8"
@@ -88,8 +49,8 @@ KBLAYOUT=${KBLAYOUT:-us}
 loadkeys "$KBLAYOUT" 2>/dev/null || true
 
 read -rp "Mirror country code (blank = default, e.g. de/fi/us): " MIRROR_COUNTRY
-read -rp "EFI partition size in MiB [512]: " EFI_SIZE
-EFI_SIZE=${EFI_SIZE:-512}
+read -rp "EFI partition size in MiB [1024]: " EFI_SIZE
+EFI_SIZE=${EFI_SIZE:-1024}
 
 echo "Available kernels:"
 echo "  1) linux"
@@ -109,10 +70,23 @@ ext4 | btrfs) ;;
 *) error "Unsupported filesystem: $ROOTFS" ;;
 esac
 
+VG_NAME=voidvm
+read -rp "Encrypt the whole disk (LUKS1 + LVM, Void handbook FDE)? [y/N]: " FDE_CHOICE
+ENCRYPT=0
+case "$FDE_CHOICE" in y | Y | yes | YES) ENCRYPT=1 ;; esac
+if [ "$ENCRYPT" -eq 1 ]; then
+  read -rp "Root volume size [10G]: " LV_ROOT
+  LV_ROOT=${LV_ROOT:-10G}
+  read -rp "Swap volume size [2G]: " LV_SWAP
+  LV_SWAP=${LV_SWAP:-2G}
+  [[ "$LV_ROOT" =~ ^[0-9]+[MGT]$ ]] || error "Invalid root size: $LV_ROOT (e.g. 10G)"
+  [[ "$LV_SWAP" =~ ^[0-9]+[MGT]$ ]] || error "Invalid swap size: $LV_SWAP (e.g. 2G)"
+  echo "The rest of the disk becomes /home. You will be asked for the LUKS passphrase."
+fi
+
 read -rp "Type 'YES' to continue: " CONFIRM
 [ "$CONFIRM" = "YES" ] || error "Aborted."
 
-exec </dev/null
 
 # Disk prefix for partitions
 if [[ "$DISK" == *"nvme"* || "$DISK" == *"mmcblk"* ]]; then
@@ -124,33 +98,45 @@ fi
 log "Unmounting existing partitions..."
 swapoff -a 2>/dev/null || true
 umount -R /mnt 2>/dev/null || true
+vgchange -an "$VG_NAME" 2>/dev/null || true
+cryptsetup close "$VG_NAME" 2>/dev/null || true
 for part in "${PART_PREFIX}"*; do
   [ -b "$part" ] && umount -f "$part" 2>/dev/null || true
 done
 
 log "Wiping disk..."
 wipefs -af "$DISK"
-partprobe "$DISK" 2>/dev/null || true
+blockdev --rereadpt "$DISK" 2>/dev/null || true
 sleep 1
 
-log "Partitioning..."
-parted -s "$DISK" mklabel gpt
-
+log "Partitioning (sfdisk)..."
 if [ "$BOOT_MODE" = "uefi" ]; then
-  parted -s "$DISK" mkpart EFI fat32 1MiB "${EFI_SIZE}MiB"
-  parted -s "$DISK" set 1 esp on
-  parted -s "$DISK" mkpart ROOT "$ROOTFS" "${EFI_SIZE}MiB" 100%
+  sfdisk --wipe always --wipe-partitions always "$DISK" <<SFDISK
+label: gpt
+size=${EFI_SIZE}MiB, type=U
+type=L
+SFDISK
   EFI_PART="${PART_PREFIX}1"
   ROOT_PART="${PART_PREFIX}2"
+elif [ "$ENCRYPT" -eq 1 ]; then
+  # Handbook FDE on BIOS: MBR with a single bootable partition
+  sfdisk --wipe always --wipe-partitions always "$DISK" <<SFDISK
+label: dos
+type=83, bootable
+SFDISK
+  ROOT_PART="${PART_PREFIX}1"
 else
-  parted -s "$DISK" mkpart BIOSBOOT 1MiB 2MiB
-  parted -s "$DISK" set 1 bios_grub on
-  parted -s "$DISK" mkpart ROOT "$ROOTFS" 2MiB 100%
+  # BIOS + GPT needs a small BIOS boot partition for GRUB
+  sfdisk --wipe always --wipe-partitions always "$DISK" <<SFDISK
+label: gpt
+size=1MiB, type=21686148-6449-6E6F-744E-656564454649
+type=L
+SFDISK
   ROOT_PART="${PART_PREFIX}2"
 fi
 
 for i in 1 2 3 4 5; do
-  partprobe "$DISK" 2>/dev/null && break
+  blockdev --rereadpt "$DISK" 2>/dev/null && break
   sleep 2
 done
 udevadm settle 2>/dev/null || true
@@ -160,7 +146,7 @@ wait_for_blockdev() {
   dev="$1"
   for i in 1 2 3 4 5 6 7 8 9 10; do
     [ -b "$dev" ] && return 0
-    partprobe "$DISK" 2>/dev/null || true
+    blockdev --rereadpt "$DISK" 2>/dev/null || true
     partx -u "$DISK" 2>/dev/null || true
     udevadm settle 2>/dev/null || true
     sleep 1
@@ -171,23 +157,57 @@ wait_for_blockdev() {
 lsblk "$DISK" 2>/dev/null || true
 wait_for_blockdev "$ROOT_PART" || error "$ROOT_PART not found."
 
-log "Formatting partitions..."
-wipefs -af "$ROOT_PART" 2>/dev/null || true
+mkfs_fs() { # label device
+  if [ "$ROOTFS" = "btrfs" ]; then
+    mkfs.btrfs -f -L "$1" "$2"
+  else
+    mkfs.ext4 -F -L "$1" "$2"
+  fi
+}
 
-if [ "$ROOTFS" = "btrfs" ]; then
-  mkfs.btrfs -f "$ROOT_PART"
+HOME_LV=0
+if [ "$ENCRYPT" -eq 1 ]; then
+  # Handbook: Full Disk Encryption (LUKS1 + LVM)
+  log "Setting up LUKS1 + LVM..."
+  xbps-install -y lvm2 cryptsetup 2>/dev/null || true
+  modprobe dm_mod 2>/dev/null || true
+  modprobe dm_crypt 2>/dev/null || true
+  CRYPT_PART="$ROOT_PART"
+  wipefs -af "$CRYPT_PART" 2>/dev/null || true
+  cryptsetup luksFormat --type luks1 "$CRYPT_PART"
+  cryptsetup luksOpen "$CRYPT_PART" "$VG_NAME"
+  vgcreate "$VG_NAME" "/dev/mapper/$VG_NAME"
+  lvcreate --name root -L "$LV_ROOT" "$VG_NAME"
+  lvcreate --name swap -L "$LV_SWAP" "$VG_NAME"
+  if [ "$(vgs --noheadings -o vg_free_count "$VG_NAME" | tr -d ' ')" -gt 0 ]; then
+    lvcreate --name home -l 100%FREE "$VG_NAME"
+    HOME_LV=1
+  fi
+  log "Formatting volumes..."
+  mkfs_fs root "/dev/$VG_NAME/root"
+  [ "$HOME_LV" -eq 1 ] && mkfs_fs home "/dev/$VG_NAME/home"
+  mkswap "/dev/$VG_NAME/swap"
+  swapon "/dev/$VG_NAME/swap"
+  ROOT_DEV="/dev/$VG_NAME/root"
 else
-  mkfs.ext4 -F "$ROOT_PART"
+  log "Formatting partitions..."
+  wipefs -af "$ROOT_PART" 2>/dev/null || true
+  mkfs_fs root "$ROOT_PART"
+  ROOT_DEV="$ROOT_PART"
 fi
 
 if [ "$BOOT_MODE" = "uefi" ]; then
   wait_for_blockdev "$EFI_PART" || error "$EFI_PART not found."
   wipefs -af "$EFI_PART" 2>/dev/null || true
-  mkfs.fat -F32 "$EFI_PART"
+  mkfs.vfat -F 32 "$EFI_PART"
 fi
 
 log "Mounting..."
-mount "$ROOT_PART" /mnt
+mount "$ROOT_DEV" /mnt
+if [ "$HOME_LV" -eq 1 ]; then
+  mkdir -p /mnt/home
+  mount "/dev/$VG_NAME/home" /mnt/home
+fi
 if [ "$BOOT_MODE" = "uefi" ]; then
   mkdir -p /mnt/boot/efi
   mount "$EFI_PART" /mnt/boot/efi
@@ -235,6 +255,7 @@ xbps-install -S -y -r /mnt || error "Repository sync failed."
 # Core packages: must exist, otherwise abort
 CORE_PKGS="base-system ${KERNEL_PKG} ${KERNEL_PKG}-headers linux-firmware grub dbus elogind iwd"
 [ "$BOOT_MODE" = "uefi" ] && CORE_PKGS="$CORE_PKGS grub-x86_64-efi efibootmgr"
+[ "$ENCRYPT" -eq 1 ] && CORE_PKGS="$CORE_PKGS lvm2 cryptsetup"
 [ "$ROOTFS" = "btrfs" ] && CORE_PKGS="$CORE_PKGS btrfs-progs" || CORE_PKGS="$CORE_PKGS e2fsprogs"
 
 # Extra packages: missing ones are skipped with a warning
@@ -294,18 +315,9 @@ done
 log "Installing base system..."
 xbps-install -y -r /mnt $FINAL_PKGS || error "xbps-install failed."
 
-# fstab (Void has no fstabgen)
+# fstab (handbook: xgenfstab from xtools)
 log "Generating fstab..."
-ROOT_UUID=$(blkid -s UUID -o value "$ROOT_PART")
-if [ "$ROOTFS" = "btrfs" ]; then
-  printf 'UUID=%s\t/\tbtrfs\tdefaults,noatime\t0 0\n' "$ROOT_UUID" >/mnt/etc/fstab
-else
-  printf 'UUID=%s\t/\text4\tdefaults,noatime\t0 1\n' "$ROOT_UUID" >/mnt/etc/fstab
-fi
-if [ "$BOOT_MODE" = "uefi" ]; then
-  EFI_UUID=$(blkid -s UUID -o value "$EFI_PART")
-  printf 'UUID=%s\t/boot/efi\tvfat\tdefaults,noatime\t0 2\n' "$EFI_UUID" >>/mnt/etc/fstab
-fi
+xgenfstab -U /mnt >/mnt/etc/fstab
 printf 'tmpfs\t/tmp\ttmpfs\trw,nosuid,nodev,size=10%%,mode=1777\t0 0\n' >>/mnt/etc/fstab
 
 # Copy dotfiles (incl. suckless sources) into the target, without .git
@@ -315,14 +327,15 @@ tar -C "$SCRIPT_DIR" --exclude=.git -cf - . | tar -C /mnt/root/dotfiles -xf -
 
 # Variables for the chroot script (kept off the process list)
 {
-  printf 'ROOT_PASS=%q\n' "$ROOT_PASS"
-  printf 'USER_PASS=%q\n' "$USER_PASS"
   printf 'USERNAME=%q\n' "$USERNAME"
   printf 'HOSTNAME=%q\n' "$HOSTNAME"
   printf 'TIMEZONE=%q\n' "$TIMEZONE"
   printf 'LOCALE=%q\n' "$LOCALE"
   printf 'KBLAYOUT=%q\n' "$KBLAYOUT"
   printf 'DISK=%q\n' "$DISK"
+  printf 'ENCRYPT=%q\n' "$ENCRYPT"
+  printf 'CRYPT_PART=%q\n' "${CRYPT_PART:-}"
+  printf 'VG_NAME=%q\n' "$VG_NAME"
   printf 'BOOT_MODE=%q\n' "$BOOT_MODE"
   printf 'HAS_NVIDIA=%q\n' "$HAS_NVIDIA"
   printf 'HAS_INTEL=%q\n' "$HAS_INTEL"
@@ -347,8 +360,42 @@ enable_svc() {
   fi
 }
 
-echo "root:${ROOT_PASS}" | chpasswd
-passwd -S root | grep -q " P " || { echo "!! root password not set" >&2; exit 1; }
+set_pw() {
+  until passwd "$1"; do
+    echo "!! Try again."
+  done
+}
+echo
+echo "=== Set the root password ==="
+set_pw root
+
+# Full disk encryption (handbook: FDE guide)
+if [ "$ENCRYPT" -eq 1 ]; then
+  echo
+  echo "=== Full disk encryption: keyfile setup ==="
+  chown root:root /
+  chmod 755 /
+
+  CRYPT_UUID=$(blkid -o value -s UUID "$CRYPT_PART")
+
+  # GRUB must be able to unlock the volume; the kernel must find it
+  grep -q '^GRUB_ENABLE_CRYPTODISK=' /etc/default/grub \
+    && sed -i 's/^GRUB_ENABLE_CRYPTODISK=.*/GRUB_ENABLE_CRYPTODISK=y/' /etc/default/grub \
+    || echo 'GRUB_ENABLE_CRYPTODISK=y' >>/etc/default/grub
+  sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=\"\(.*\)\"|GRUB_CMDLINE_LINUX_DEFAULT=\"\1 rd.lvm.vg=${VG_NAME} rd.luks.uuid=${CRYPT_UUID}\"|" /etc/default/grub
+
+  # Keyfile so the passphrase is only asked once at boot
+  dd bs=1 count=64 if=/dev/urandom of=/boot/volume.key
+  until cryptsetup luksAddKey "$CRYPT_PART" /boot/volume.key; do
+    echo "!! Try again."
+  done
+  chmod 000 /boot/volume.key
+  chmod -R g-rwx,o-rwx /boot
+
+  echo "${VG_NAME}   UUID=${CRYPT_UUID}   /boot/volume.key   luks" >/etc/crypttab
+  mkdir -p /etc/dracut.conf.d
+  echo 'install_items+=" /boot/volume.key /etc/crypttab "' >/etc/dracut.conf.d/10-crypt.conf
+fi
 
 # Timezone, clock
 ln -sf "/usr/share/zoneinfo/${TIMEZONE}" /etc/localtime
@@ -380,8 +427,9 @@ for g in audio video input lp storage network kvm optical _seatd; do
   getent group "$g" >/dev/null && GROUPS_OK="$GROUPS_OK,$g"
 done
 useradd -m -G "$GROUPS_OK" -s /bin/bash "${USERNAME}"
-echo "${USERNAME}:${USER_PASS}" | chpasswd
-passwd -S "${USERNAME}" | grep -q " P " || { echo "!! user password not set" >&2; exit 1; }
+echo
+echo "=== Set the password for ${USERNAME} ==="
+set_pw "${USERNAME}"
 
 mkdir -p /etc/sudoers.d
 cat >/etc/sudoers.d/10-wheel <<'SUDOERS'
@@ -565,10 +613,6 @@ add_drivers+=" nvidia nvidia_modeset nvidia_uvm nvidia_drm "
 DRACUTEOF
 fi
 
-# Configure all packages (generates initramfs via dracut)
-log "Reconfiguring packages (initramfs)..."
-xbps-reconfigure -fa
-
 # GRUB
 grep -q '^GRUB_TIMEOUT=' /etc/default/grub \
   && sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=3/' /etc/default/grub \
@@ -584,11 +628,16 @@ grep -q '^GRUB_SAVEDEFAULT=' /etc/default/grub \
   || echo 'GRUB_SAVEDEFAULT=true' >>/etc/default/grub
 
 if [ "$BOOT_MODE" = "uefi" ]; then
+  mount -t efivarfs none /sys/firmware/efi/efivars 2>/dev/null || true
   grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Void \
-    || grub-install --target=x86_64-efi --efi-directory=/boot/efi --removable
+    || grub-install --target=x86_64-efi --efi-directory=/boot/efi --removable --no-nvram
 else
-  grub-install --target=i386-pc "${DISK}"
+  grub-install "${DISK}"
 fi
+
+# Configure all packages: dracut builds the initramfs, GRUB writes its config
+log "Reconfiguring packages..."
+xbps-reconfigure -fa
 grub-mkconfig -o /boot/grub/grub.cfg
 
 # Default theme
@@ -619,15 +668,11 @@ if [ -d /var/lib/iwd ]; then
   cp -r /var/lib/iwd/* /mnt/var/lib/iwd/ 2>/dev/null || true
 fi
 
-# Chroot and run setup
+# Chroot and run setup (handbook: xchroot from xtools)
 log "Entering chroot..."
-for d in dev proc sys; do
-  mount --rbind "/$d" "/mnt/$d"
-  mount --make-rslave "/mnt/$d"
-done
-mount --bind /run /mnt/run
-
-chroot /mnt /bin/bash /root/chroot-setup.sh
+echo
+echo ">> You will be asked to set the root and user passwords during this step."
+xchroot /mnt /bin/bash /root/chroot-setup.sh
 
 rm -rf /mnt/root/chroot-setup.sh /mnt/root/install.env /mnt/root/dotfiles
 
@@ -636,4 +681,5 @@ echo "Reboot into your new Void Linux system."
 echo "Login as: $USERNAME"
 sleep 3
 umount -R /mnt
+swapoff -a 2>/dev/null || true
 reboot
