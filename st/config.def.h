@@ -96,32 +96,32 @@ unsigned int tabspaces = 8;
 /* Terminal colors (16 first used in escape sequence) */
 static const char *colorname[] = {
 	/* 8 normal colors */
-	"#45475a", /* black   (surface1) */
-	"#f38ba8", /* red */
-	"#a6e3a1", /* green */
-	"#f9e2af", /* yellow */
-	"#89b4fa", /* blue */
-	"#f5c2e7", /* magenta (pink) */
-	"#94e2d5", /* cyan    (teal) */
-	"#bac2de", /* white   (subtext1) */
-
-	/* 8 bright colors */
-	"#585b70", /* surface2 */
+	"#45475a",
 	"#f38ba8",
 	"#a6e3a1",
 	"#f9e2af",
 	"#89b4fa",
 	"#f5c2e7",
 	"#94e2d5",
-	"#a6adc8", /* subtext0 */
+	"#bac2de",
+
+	/* 8 bright colors */
+	"#585b70",
+	"#f38ba8",
+	"#a6e3a1",
+	"#f9e2af",
+	"#89b4fa",
+	"#f5c2e7",
+	"#94e2d5",
+	"#a6adc8",
 
 	[255] = 0,
 
 	/* more colors can be added after 255 to use with DefaultXX */
-	"#f5e0dc", /* cursor (rosewater) */
-	"#f5e0dc", /* reverse cursor */
-	"#cdd6f4", /* default foreground colour (text) */
-	"#1e1e2e", /* default background colour (base) */
+	"#f5e0dc",
+	"#f5e0dc",
+	"#cdd6f4", /* default foreground colour */
+	"#1e1e2e", /* default background colour */
 };
 
 /*
