@@ -251,11 +251,9 @@ CORE_PKGS="base-system linux-firmware grub dbus iwd"
 
 # Extra packages: missing ones are skipped with a warning
 EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez
-xorg-minimal xorg-input-drivers xinit font-firacode
-libX11-devel libXft-devel libXinerama-devel libXrandr-devel libXext-devel freetype-devel harfbuzz-devel fontconfig-devel
-make gcc pkg-config slop maim xclip xrandr xsetroot setxkbmap
-xset xwallpaper dunst nnn bc neovim fastfetch qutebrowser brightnessctl htop jq
-tlp wireguard-tools openresolv mesa-dri"
+xorg-minimal xorg-input-drivers xinit font-firacode slop maim xclip xrandr xsetroot setxkbmap
+xset xwallpaper dunst nnn neovim fastfetch qutebrowser brightnessctl htop jq
+tlp openresolv mesa-dri"
 
 # CPU microcode
 if [ "$CPU_VENDOR" = "GenuineIntel" ]; then
