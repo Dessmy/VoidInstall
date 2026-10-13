@@ -1,5 +1,5 @@
 # dunst configuration - Void Linux X11
-# Gruvbox Dark theme matching dwm/st
+# Catppuccin Mocha theme matching dwm/st
 # Replaces mako from Wayland setup
 
 [global]
@@ -15,6 +15,7 @@
     alignment = left
     # Minimum gap between notifications
     gap_size = 10
+    font = FiraCode Nerd Font Bold 16
     # Shrink notifications to fit screen
     shrink = no
     # Transparency (0-255)
@@ -55,7 +56,7 @@
     horizontal_padding = 12
     # Frame
     frame_width = 2
-    frame_color = "#8ec07c"
+    frame_color = "#89b4fa"
     # Separator height
     separator_height = 2
     # Line height
@@ -67,31 +68,31 @@
 
 [frame]
     width = 2
-    color = "#8ec07c"
+    color = "#89b4fa"
 
 [separator]
     color = frame
     height = 2
 
-# Gruvbox Dark colors
+# Catppuccin Mocha colors
 [urgency_low]
-    background = "#282828"
-    foreground = "#ebdbb2"
-    frame_color = "#504945"
+    background = "#1e1e2e"
+    foreground = "#cdd6f4"
+    frame_color = "#313244"
     timeout = 10
     icon = dialog-information
 
 [urgency_normal]
-    background = "#282828"
-    foreground = "#ebdbb2"
-    frame_color = "#8ec07c"
+    background = "#1e1e2e"
+    foreground = "#cdd6f4"
+    frame_color = "#89b4fa"
     timeout = 10
     icon = dialog-information
 
 [urgency_critical]
-    background = "#282828"
-    foreground = "#fb4934"
-    frame_color = "#fb4934"
+    background = "#1e1e2e"
+    foreground = "#f38ba8"
+    frame_color = "#f38ba8"
     timeout = 0
     icon = dialog-error
 
