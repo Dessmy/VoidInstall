@@ -7,7 +7,6 @@ static const int showbar            = 1;        /* 0 means no bar */
 static const int topbar             = 1;        /* 0 means bottom bar */
 static const char *fonts[]          = { "FiraCode Nerd Font:size=16:weight=bold" };
 static const char dmenufont[]       = "FiraCode Nerd Font:size=16:weight=bold";
-/* Catppuccin Mocha */
 static const char col_base[]        = "#1e1e2e";
 static const char col_surface0[]    = "#313244";
 static const char col_text[]        = "#cdd6f4";
