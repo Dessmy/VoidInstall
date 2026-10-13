@@ -14,10 +14,6 @@ warn() { echo "!! $1" >&2; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export XBPS_ARCH=x86_64
 
-# Install required tools for partitioning
-log "Installing required tools (xtools: xgenfstab, xchroot)..."
-xbps-install -Sy xtools || error "Cannot install xtools (check network)."
-
 chattr -i /etc/resolv.conf 2>/dev/null || true
 
 # Detect boot mode
@@ -64,23 +60,11 @@ read -rp "Mirror country code (blank = default, e.g. de/fi/us): " MIRROR_COUNTRY
 read -rp "EFI partition size in MiB [1024]: " EFI_SIZE
 EFI_SIZE=${EFI_SIZE:-1024}
 
-echo "Available kernels:"
-echo "  1) linux"
-echo "  2) linux-lts"
-read -rp "Select kernel [1]: " KERNEL_CHOICE
-KERNEL_CHOICE=${KERNEL_CHOICE:-1}
-case "$KERNEL_CHOICE" in
-1) KERNEL_PKG="linux" ;;
-2) KERNEL_PKG="linux-lts" ;;
-*) error "Invalid kernel choice." ;;
-esac
-
-read -rp "Root filesystem ext4/btrfs [ext4]: " ROOTFS
-ROOTFS=${ROOTFS:-ext4}
-case "$ROOTFS" in
-ext4 | btrfs) ;;
-*) error "Unsupported filesystem: $ROOTFS" ;;
-esac
+echo
+echo "Swap = disk space the system uses as overflow when RAM is full (also needed for hibernate)."
+read -rp "Swap size (e.g. 2G, 0 = no swap) [2G]: " SWAP_SIZE
+SWAP_SIZE=${SWAP_SIZE:-2G}
+[[ "$SWAP_SIZE" =~ ^([0-9]+[MG]|0)$ ]] || error "Invalid swap size: $SWAP_SIZE (e.g. 2G or 0)"
 
 VG_NAME=voidvm
 read -rp "Encrypt the whole disk (LUKS1 + LVM, Void handbook FDE)? [y/N]: " FDE_CHOICE
@@ -89,10 +73,7 @@ case "$FDE_CHOICE" in y | Y | yes | YES) ENCRYPT=1 ;; esac
 if [ "$ENCRYPT" -eq 1 ]; then
   read -rp "Root volume size [10G]: " LV_ROOT
   LV_ROOT=${LV_ROOT:-10G}
-  read -rp "Swap volume size [2G]: " LV_SWAP
-  LV_SWAP=${LV_SWAP:-2G}
   [[ "$LV_ROOT" =~ ^[0-9]+[MGT]$ ]] || error "Invalid root size: $LV_ROOT (e.g. 10G)"
-  [[ "$LV_SWAP" =~ ^[0-9]+[MGT]$ ]] || error "Invalid swap size: $LV_SWAP (e.g. 2G)"
   echo "The rest of the disk becomes /home. You will be asked for the LUKS passphrase."
 fi
 
@@ -170,11 +151,7 @@ lsblk "$DISK" 2>/dev/null || true
 wait_for_blockdev "$ROOT_PART" || error "$ROOT_PART not found."
 
 mkfs_fs() { # label device
-  if [ "$ROOTFS" = "btrfs" ]; then
-    mkfs.btrfs -f -L "$1" "$2"
-  else
-    mkfs.ext4 -F -L "$1" "$2"
-  fi
+  mkfs.ext4 -F -L "$1" "$2"
 }
 
 HOME_LV=0
@@ -190,7 +167,7 @@ if [ "$ENCRYPT" -eq 1 ]; then
   cryptsetup luksOpen "$CRYPT_PART" "$VG_NAME"
   vgcreate "$VG_NAME" "/dev/mapper/$VG_NAME"
   lvcreate --name root -L "$LV_ROOT" "$VG_NAME"
-  lvcreate --name swap -L "$LV_SWAP" "$VG_NAME"
+  [ "$SWAP_SIZE" != "0" ] && lvcreate --name swap -L "$SWAP_SIZE" "$VG_NAME"
   if [ "$(vgs --noheadings -o vg_free_count "$VG_NAME" | tr -d ' ')" -gt 0 ]; then
     lvcreate --name home -l 100%FREE "$VG_NAME"
     HOME_LV=1
@@ -198,8 +175,10 @@ if [ "$ENCRYPT" -eq 1 ]; then
   log "Formatting volumes..."
   mkfs_fs root "/dev/$VG_NAME/root"
   [ "$HOME_LV" -eq 1 ] && mkfs_fs home "/dev/$VG_NAME/home"
-  mkswap "/dev/$VG_NAME/swap"
-  swapon "/dev/$VG_NAME/swap"
+  if [ "$SWAP_SIZE" != "0" ]; then
+    mkswap "/dev/$VG_NAME/swap"
+    swapon "/dev/$VG_NAME/swap"
+  fi
   ROOT_DEV="/dev/$VG_NAME/root"
 else
   log "Formatting partitions..."
@@ -265,26 +244,18 @@ log "Syncing repositories..."
 xbps-install -S -y -r /mnt || error "Repository sync failed."
 
 # Core packages: must exist, otherwise abort
-CORE_PKGS="base-system ${KERNEL_PKG} ${KERNEL_PKG}-headers linux-firmware grub dbus elogind iwd"
+# base-system already provides the kernel (linux), less, e2fsprogs, dosfstools -> not listed here
+CORE_PKGS="base-system linux-firmware grub dbus iwd"
 [ "$BOOT_MODE" = "uefi" ] && CORE_PKGS="$CORE_PKGS grub-x86_64-efi efibootmgr"
 [ "$ENCRYPT" -eq 1 ] && CORE_PKGS="$CORE_PKGS lvm2 cryptsetup"
-[ "$ROOTFS" = "btrfs" ] && CORE_PKGS="$CORE_PKGS btrfs-progs" || CORE_PKGS="$CORE_PKGS e2fsprogs"
 
 # Extra packages: missing ones are skipped with a warning
-EXTRA_PKGS="git curl less dosfstools pipewire wireplumber libspa-bluetooth alsa-utils bluez
+EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez
 xorg-minimal xorg-input-drivers xinit font-firacode
-libX11-devel libXft-devel libXinerama-devel freetype-devel harfbuzz-devel fontconfig-devel
-make gcc pkg-config unzip slop maim xclip xrandr xsetroot xinput setxkbmap
+libX11-devel libXft-devel libXinerama-devel libXrandr-devel libXext-devel freetype-devel harfbuzz-devel fontconfig-devel
+make gcc pkg-config slop maim xclip xrandr xsetroot setxkbmap
 xset xwallpaper dunst nnn bc neovim fastfetch qutebrowser brightnessctl htop jq
-tlp wireguard-tools openresolv mesa-dri vulkan-loader"
-
-# Nerd font: use whichever package name exists
-for nf in nerd-fonts-ttf nerd-fonts; do
-  if xbps-query -R -r /mnt "$nf" >/dev/null 2>&1; then
-    EXTRA_PKGS="$EXTRA_PKGS $nf"
-    break
-  fi
-done
+tlp wireguard-tools openresolv mesa-dri"
 
 # CPU microcode
 if [ "$CPU_VENDOR" = "GenuineIntel" ]; then
@@ -306,7 +277,7 @@ fi
 
 if [ "$HAS_NVIDIA" -eq 1 ]; then
   log "Adding NVIDIA GPU packages..."
-  EXTRA_PKGS="$EXTRA_PKGS nvidia nvidia-libs-32bit nvidia-opencl"
+  EXTRA_PKGS="$EXTRA_PKGS linux-headers nvidia nvidia-libs-32bit nvidia-opencl"
 fi
 
 # Core check (fatal)
@@ -327,10 +298,27 @@ done
 log "Installing base system..."
 xbps-install -y -r /mnt $FINAL_PKGS || error "xbps-install failed."
 
-# fstab (handbook: xgenfstab from xtools)
+# Swap file (non-encrypted layout; the encrypted layout uses a swap volume)
+if [ "$ENCRYPT" -eq 0 ] && [ "$SWAP_SIZE" != "0" ]; then
+  log "Creating swap file ($SWAP_SIZE)..."
+  fallocate -l "$SWAP_SIZE" /mnt/swapfile
+  chmod 600 /mnt/swapfile
+  mkswap /mnt/swapfile
+fi
+
+# fstab (UUIDs via blkid)
 log "Generating fstab..."
-xgenfstab -U /mnt >/mnt/etc/fstab
-printf 'tmpfs\t/tmp\ttmpfs\trw,nosuid,nodev,size=10%%,mode=1777\t0 0\n' >>/mnt/etc/fstab
+fstab_line() { # device mountpoint type options pass
+  printf 'UUID=%s\t%s\t%s\t%s\t0 %s\n' "$(blkid -s UUID -o value "$1")" "$2" "$3" "$4" "$5"
+}
+{
+  fstab_line "$ROOT_DEV" / ext4 defaults,noatime 1
+  if [ "$HOME_LV" -eq 1 ]; then fstab_line "/dev/$VG_NAME/home" /home ext4 defaults,noatime 2; fi
+  if [ "$BOOT_MODE" = "uefi" ]; then fstab_line "$EFI_PART" /boot/efi vfat defaults,noatime 2; fi
+  if [ "$ENCRYPT" -eq 1 ] && [ "$SWAP_SIZE" != "0" ]; then fstab_line "/dev/$VG_NAME/swap" none swap defaults 0; fi
+  if [ "$ENCRYPT" -eq 0 ] && [ "$SWAP_SIZE" != "0" ]; then printf '/swapfile\tnone\tswap\tdefaults\t0 0\n'; fi
+  printf 'tmpfs\t/tmp\ttmpfs\trw,nosuid,nodev,size=10%%,mode=1777\t0 0\n'
+} >/mnt/etc/fstab
 
 # Copy dotfiles (incl. suckless sources) into the target, without .git
 log "Copying dotfiles..."
@@ -459,7 +447,7 @@ IWDCONF
 
 # Enable services (runit)
 mkdir -p /etc/runit/runsvdir/default
-for svc in dbus elogind iwd bluetoothd tlp; do
+for svc in dbus iwd bluetoothd tlp; do
   enable_svc "$svc"
 done
 
@@ -482,16 +470,37 @@ echo 'fs.file-max = 2097152' >/etc/sysctl.d/99-filemax.conf
 H="/home/${USERNAME}"
 mkdir -p "$H/Downloads" "$H/Music" "$H/Pictures" "$H/Videos" "$H/.config" "$H/.local/bin"
 
-# Build suckless tools from ~/.config (sources stay editable; rebuild with dotsync)
+# Configs ask for "FiraCode Nerd Font": point that name to Fira Code (repo, no icons)
+log "Configuring Fira Code font alias..."
+cat >/etc/fonts/local.conf <<'FONTCONF'
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+  <alias binding="same">
+    <family>FiraCode Nerd Font</family>
+    <prefer>
+      <family>Fira Code</family>
+    </prefer>
+  </alias>
+</fontconfig>
+FONTCONF
+fc-cache -f
+
+# Clone suckless tools into ~/.config, overwrite config.def.h with ours, build
 set -o pipefail
 DOT=/root/dotfiles
-for tool in dwm st dmenu; do
-  if [ -d "$DOT/$tool" ]; then
-    log "Building $tool..."
-    rm -rf "$H/.config/$tool"
-    cp -r "$DOT/$tool" "$H/.config/$tool"
-    (cd "$H/.config/$tool" && make clean install && make clean) 2>&1 | tee "/root/$tool-build.log"
+for tool in dwm st dmenu slock; do
+  log "Cloning and building $tool..."
+  rm -rf "$H/.config/$tool"
+  git clone --depth 1 "https://git.suckless.org/$tool" "$H/.config/$tool"
+  rm -rf "$H/.config/$tool/.git"
+  if [ -f "$DOT/$tool/config.def.h" ]; then
+    cp "$DOT/$tool/config.def.h" "$H/.config/$tool/config.def.h"
+  else
+    warn "No config.def.h for $tool in dotfiles, using upstream default."
   fi
+  rm -f "$H/.config/$tool/config.h"
+  (cd "$H/.config/$tool" && make clean install && make clean) 2>&1 | tee "/root/$tool-build.log"
 done
 
 # Install dotfiles
@@ -510,7 +519,7 @@ for item in "$DOT"/*; do
   [ -e "$item" ] || continue
   name=$(basename "$item")
   case "$name" in
-    dwm | st | dmenu | setup | README* | LICENSE* | *.md) continue ;;
+    dwm | st | dmenu | slock | setup | README* | LICENSE* | *.md) continue ;;
     scripts)
       cp -r "$item"/. "$H/.local/bin/"
       chmod +x "$H/.local/bin"/* 2>/dev/null || true
@@ -648,11 +657,6 @@ log "Reconfiguring packages..."
 xbps-reconfigure -fa
 grub-mkconfig -o /boot/grub/grub.cfg
 
-# Default theme
-log "Setting default theme (Catppuccin Mocha)..."
-su - "${USERNAME}" -c "mkdir -p ~/.config/themes && echo 'mocha' > ~/.config/themes/current"
-su - "${USERNAME}" -c 'PATH=$HOME/.local/bin:$PATH theme-switcher mocha' 2>/dev/null || true
-
 # Cleanup
 rm -f /root/*-build.log
 xbps-remove -Oo -y 2>/dev/null || true
@@ -676,11 +680,15 @@ if [ -d /var/lib/iwd ]; then
   cp -r /var/lib/iwd/* /mnt/var/lib/iwd/ 2>/dev/null || true
 fi
 
-# Chroot and run setup (handbook: xchroot from xtools)
+# Chroot and run setup (handbook: manual chroot)
 log "Entering chroot..."
 echo
 [ "$ENCRYPT" -eq 1 ] && echo ">> You will be asked for the LUKS passphrase once more (keyfile setup)."
-xchroot /mnt /bin/bash /root/chroot-setup.sh
+for d in sys dev proc; do
+  mount --rbind "/$d" "/mnt/$d"
+  mount --make-rslave "/mnt/$d"
+done
+chroot /mnt /bin/bash /root/chroot-setup.sh
 
 rm -rf /mnt/root/chroot-setup.sh /mnt/root/install.env /mnt/root/dotfiles
 
