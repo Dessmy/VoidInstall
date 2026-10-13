@@ -48,17 +48,9 @@ return {
     name = "catppuccin",
     priority = 1000,
     opts = function()
-      -- Detect theme from file (set by theme-switcher)
-      local theme_file = vim.fn.stdpath("config") .. "/../themes/current"
-      local flavour = "mocha"
-      local f = io.open(theme_file, "r")
-      if f then
-        flavour = f:read("*l") or "mocha"
-        f:close()
-      end
       return {
-        flavour = flavour,
-        background = { light = "latte", dark = "mocha" },
+        flavour = "mocha",
+        background = { light = "mocha", dark = "mocha" },
         transparent_background = false,
         show_end_of_buffer = false,
         term_colors = true,
