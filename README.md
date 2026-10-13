@@ -199,12 +199,12 @@ exec dwm
 ```
 Edit the loop in ~/.xinitrc to customize what shows in the bar.
 
-### Theme: Gruvbox Dark
-All tools use consistent Gruvbox Dark colors:
-- Background: #282828
-- Foreground: #ebdbb2
-- Accent: #8ec07c (aqua)
-- Red: #fb4934, Green: #b8bb26, Yellow: #fabd2f, Blue: #83a598, Purple: #d3869b
+### Theme: Catppuccin Mocha
+All tools are hardcoded to Catppuccin Mocha (no theme switcher):
+- Background: #1e1e2e (base), Surface: #313244
+- Foreground: #cdd6f4 (text)
+- Accent: #89b4fa (blue)
+- Red: #f38ba8, Green: #a6e3a1, Yellow: #f9e2af, Mauve: #cba6f7
 
 ## Directory Structure
 
@@ -315,7 +315,7 @@ pactl list short sinks
 - Void Linux Handbook
 - TLP Configuration
 - NVIDIA Prime Render Offload
-- Gruvbox Theme
+- Catppuccin Mocha
 
 ## License
 
