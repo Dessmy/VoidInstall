@@ -158,7 +158,7 @@ alias src='source ~/.bashrc'
 
 # Rebuild suckless tools
 dotsync() {
-  for tool in dwm st dmenu; do
+  for tool in dwm st dmenu slock; do
     [ -d "$HOME/.config/$tool" ] && [ -f "$HOME/.config/$tool/Makefile" ] &&
       (cd "$HOME/.config/$tool" && sudo make clean install 2>/dev/null) || true
   done
