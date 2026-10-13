@@ -2,11 +2,11 @@ import os.path
 
 config.load_autoconfig(True)
 
-font = "FiraCode Nerd Font Medium"
+font = "FiraCode Nerd Font"
 
 CONFIG_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Catppuccin Mocha colors (will be updated by theme-switcher)
+# Catppuccin Mocha colors
 base00 = "#1e1e2e"
 base01 = "#181825"
 base02 = "#313244"
@@ -96,7 +96,6 @@ c.colors.downloads.error.fg = base08
 c.colors.hints.fg = base00
 c.colors.hints.bg = base0A
 c.colors.hints.match.fg = base08
-c.fonts.hints = "10pt " + font
 c.hints.padding = {"top": 1, "bottom": 1, "left": 3, "right": 3}
 c.hints.border = "1px solid " + base01
 c.hints.radius = 4
@@ -168,6 +167,13 @@ c.colors.tabs.selected.even.bg = base02
 
 c.fonts.default_family = font
 c.fonts.default_size = "16pt"
+# Every UI font: 16pt bold
+for _opt in (
+    "completion.entry", "completion.category", "contextmenu", "debug_console",
+    "downloads", "hints", "keyhint", "messages.error", "messages.info",
+    "messages.warning", "prompts", "statusbar", "tabs.selected", "tabs.unselected",
+):
+    config.set("fonts." + _opt, "bold 16pt " + font)
 
 c.fonts.web.family.standard = font
 c.fonts.web.family.serif = font
