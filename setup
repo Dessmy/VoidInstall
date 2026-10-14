@@ -252,8 +252,8 @@ CORE_PKGS="base-system linux-firmware grub dbus iwd"
 # Extra packages: missing ones are skipped with a warning
 EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez
 xorg-minimal xorg-input-drivers xinit font-firacode slop maim xclip xrandr xsetroot setxkbmap
-xset xwallpaper dunst nnn neovim fastfetch qutebrowser brightnessctl htop jq
-tlp openresolv mesa-dri"
+xset xwallpaper dunst nnn bc neovim fastfetch qutebrowser brightnessctl htop jq
+tlp wireguard-tools openresolv mesa-dri"
 
 # CPU microcode
 if [ "$CPU_VENDOR" = "GenuineIntel" ]; then
@@ -671,11 +671,25 @@ rm -f /mnt/etc/resolv.conf 2>/dev/null || true
 cp -L /etc/resolv.conf /mnt/etc/resolv.conf || error "resolv.conf copy failed."
 [ -s /mnt/etc/resolv.conf ] || error "resolv.conf empty, check network."
 
-# Copy current iwd network state to target
-if [ -d /var/lib/iwd ]; then
-  log "Copying iwd network state to target..."
-  mkdir -p /mnt/var/lib/iwd
-  cp -r /var/lib/iwd/* /mnt/var/lib/iwd/ 2>/dev/null || true
+# Wi-Fi: the live ISO has no iwd, so reuse the wpa_supplicant config made on the live
+# system (/tmp/wpa.conf from wpa_passphrase) and save it as an iwd network -> auto-connects after install
+if [ -f /tmp/wpa.conf ]; then
+  WIFI_SSID=$(sed -n 's/^[[:space:]]*ssid="\(.*\)"[[:space:]]*$/\1/p' /tmp/wpa.conf | head -1)
+  WIFI_PSK=$(sed -n 's/^[[:space:]]*psk=\([0-9a-fA-F]\{64\}\)[[:space:]]*$/\1/p' /tmp/wpa.conf | head -1)
+  if [ -n "$WIFI_SSID" ] && [ -n "$WIFI_PSK" ]; then
+    log "Saving Wi-Fi '$WIFI_SSID' for iwd..."
+    IWD_NAME="$WIFI_SSID"
+    # iwd file names: plain SSID if it only has letters, digits, space, - or _; else '=' + hex
+    if [[ ! "$IWD_NAME" =~ ^[A-Za-z0-9\ _-]+$ ]]; then
+      IWD_NAME="=$(printf '%s' "$WIFI_SSID" | od -An -tx1 | tr -d ' \n')"
+    fi
+    mkdir -p /mnt/var/lib/iwd
+    chmod 700 /mnt/var/lib/iwd
+    printf '[Security]\nPreSharedKey=%s\n' "$WIFI_PSK" >"/mnt/var/lib/iwd/${IWD_NAME}.psk"
+    chmod 600 "/mnt/var/lib/iwd/${IWD_NAME}.psk"
+  else
+    warn "/tmp/wpa.conf has no ssid/psk, Wi-Fi not saved. Connect later with iwctl."
+  fi
 fi
 
 # Chroot and run setup (handbook: manual chroot)
