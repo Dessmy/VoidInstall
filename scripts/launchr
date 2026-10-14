@@ -33,8 +33,11 @@ calc_eval() {
     *) return 0 ;;
   esac
 
-  result=$(printf '%s\n' "$q" | bc -l 2>/dev/null) || return 0
-  [ -z "$result" ] && return 0
+  # awk does the math (floating point; ^ is power); input is already limited to digits and + - * / ^ ( ) .
+  result=$(awk "BEGIN { printf \"%.10g\\n\", ($q) }" 2>/dev/null) || return 0
+  case "$result" in
+    '' | *inf* | *nan*) return 0 ;;
+  esac
   printf '%s\n' "$result"
 }
 
