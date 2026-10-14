@@ -252,9 +252,9 @@ CORE_PKGS="base-system linux-firmware grub dbus iwd"
 # Extra packages: missing ones are skipped with a warning
 EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez
 xorg-minimal xorg-input-drivers xinit font-firacode
-slop maim xclip xrandr xsetroot setxkbmap
-xset xwallpaper dunst nnn neovim fastfetch qutebrowser brightnessctl htop
-tlp openresolv mesa-dri"
+slop maim xclip
+xset xwallpaper dunst nnn neovim fastfetch qutebrowser htop jq
+tlp wireguard-tools openresolv mesa-dri libnotify pulseaudio-utils"
 
 # CPU microcode
 if [ "$CPU_VENDOR" = "GenuineIntel" ]; then
@@ -417,7 +417,7 @@ HOSTS
 
 # User: only add groups that exist on Void
 GROUPS_OK="wheel"
-for g in audio video input lp storage network kvm optical _seatd; do
+for g in audio video input lp storage network kvm optical bluetooth _seatd; do
   getent group "$g" >/dev/null && GROUPS_OK="$GROUPS_OK,$g"
 done
 useradd -m -G "$GROUPS_OK" -s /bin/bash "${USERNAME}"
@@ -505,6 +505,12 @@ for tool in dwm st dmenu slock; do
     warn "No config.def.h for $tool in dotfiles, using upstream default."
   fi
   rm -f "$H/.config/$tool/config.h"
+  if [ "$tool" = "dwm" ]; then
+    # `dwm -s "text"` sets the bar text (replaces xsetroot -name): small patch to main() in dwm.c
+    sed -i 's|^\telse if (argc != 1)$|\telse if (argc == 3 \&\& !strcmp("-s", argv[1])) {\n\t\tif (!(dpy = XOpenDisplay(NULL)))\n\t\t\tdie("dwm: cannot open display");\n\t\tXStoreName(dpy, DefaultRootWindow(dpy), argv[2]);\n\t\tXCloseDisplay(dpy);\n\t\treturn 0;\n\t} else if (argc != 1)|; s|die("usage: dwm \[-v\]");|die("usage: dwm [-v] [-s status]");|' "$H/.config/dwm/dwm.c"
+    grep -q 'XStoreName(dpy, DefaultRootWindow(dpy), argv\[2\])' "$H/.config/dwm/dwm.c" \
+      || { echo "!! dwm.c main() changed upstream: the -s patch did not apply" >&2; exit 1; }
+  fi
   (cd "$H/.config/$tool" && make clean install && make clean) 2>&1 | tee "/root/$tool-build.log"
 done
 
@@ -533,7 +539,6 @@ for item in "$DOT"/*; do
       f=$(src_of .xinitrc)
       [ -n "$f" ] || continue
       cp "$f" "$H/.xinitrc"
-      sed -i "2a# Keyboard layout\nsetxkbmap \"${KBLAYOUT}\" \&\n" "$H/.xinitrc"
       chmod +x "$H/.xinitrc"
       ;;
     .bashrc)
@@ -558,6 +563,16 @@ done
 if [ ! -f "$H/.bash_profile" ]; then
   echo '[[ -f "$HOME/.bashrc" ]] && source "$HOME/.bashrc"' >"$H/.bash_profile"
 fi
+
+# Keyboard layout for X (no setxkbmap needed)
+mkdir -p /etc/X11/xorg.conf.d
+cat >/etc/X11/xorg.conf.d/00-keyboard.conf <<KBCONF
+Section "InputClass"
+    Identifier "keyboard layout"
+    MatchIsKeyboard "on"
+    Option "XkbLayout" "${KBLAYOUT}"
+EndSection
+KBCONF
 
 # Auto-start X on tty1
 if ! grep -q 'exec startx' "$H/.bash_profile" 2>/dev/null; then
@@ -613,10 +628,7 @@ SUDOERS
 cat >/etc/sudoers.d/31-power <<'SUDOERS'
 %wheel ALL=(root) NOPASSWD: /usr/bin/tlp bat, /usr/bin/tlp ac, /usr/bin/tlp-stat *, /usr/bin/tlp start, /usr/local/bin/prime-run *
 SUDOERS
-cat >/etc/sudoers.d/32-brightness <<'SUDOERS'
-%wheel ALL=(root) NOPASSWD: /usr/bin/brightnessctl set *
-SUDOERS
-for f in 30-vpn 31-power 32-brightness; do
+for f in 30-vpn 31-power; do
   chmod 0440 "/etc/sudoers.d/$f"
   visudo -cf "/etc/sudoers.d/$f" || rm -f "/etc/sudoers.d/$f"
 done
