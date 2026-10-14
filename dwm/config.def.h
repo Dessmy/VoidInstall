@@ -97,11 +97,11 @@ static const Key keys[] = {
 	{ MODKEY|ShiftMask,             XK_q,      quit,           {0} },
 
 	/* scripts (~/.local/bin) */
-	{ MODKEY,                       XK_a,            spawn, SHCMD("$HOME/.local/bin/launchr") },
+	{ MODKEY,                       XK_a,            spawn, SHCMD("$HOME/.local/bin/launcher") },
 	{ MODKEY,                       XK_v,            spawn, SHCMD("$HOME/.local/bin/clipboard") },
 	{ MODKEY,                       XK_w,            spawn, SHCMD("$HOME/.local/bin/wifi") },
 	{ MODKEY|ShiftMask,             XK_b,            spawn, SHCMD("$HOME/.local/bin/bluetooth") },
-	{ MODKEY,                       XK_x,            spawn, SHCMD("$HOME/.local/bin/xrandr") },
+	{ MODKEY,                       XK_x,            spawn, SHCMD("st -e $HOME/.local/bin/display") },
 	{ MODKEY,                       XK_s,            spawn, SHCMD("$HOME/.local/bin/screenshot") },
 	{ MODKEY|ShiftMask,             XK_s,            spawn, SHCMD("$HOME/.local/bin/screenshot area") },
 	{ MODKEY,                       XK_r,            spawn, SHCMD("$HOME/.local/bin/record") },
