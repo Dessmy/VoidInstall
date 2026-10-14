@@ -38,8 +38,8 @@ target=$(printf '%s\n' "$ordered" | awk -v cur="$current" '
 
 FULL_PATH="$WALLPAPER_DIR/$target"
 
-# Set wallpaper with feh
-feh --bg-fill "$FULL_PATH"
+# Set wallpaper with xwallpaper
+xwallpaper --zoom "$FULL_PATH"
 
 echo "$FULL_PATH" > "$CACHE_FILE"
 notify-send -a Wallpaper -i "$FULL_PATH" "Wallpaper Changed" "Now showing: $target"
