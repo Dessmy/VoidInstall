@@ -13,19 +13,17 @@ if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
     exit 0
 fi
 
-# Get screen resolution
-RES=$(xrandr | grep '*' | head -1 | awk '{print $1}')
-
 if [ "$MODE" = "area" ]; then
     GEOM=$(slop -f "%x %y %w %h" 2>/dev/null)
     if [ -z "$GEOM" ]; then
         exit 1
     fi
-    read -r x y w h <<<"$GEOM"
+    set -- $GEOM
+    x=$1 y=$2 w=$3 h=$4
     ffmpeg -f x11grab -framerate 60 -video_size "${w}x${h}" -i ":0.0+${x},${y}" \
         -c:v libx264 -preset ultrafast -crf 23 -pix_fmt yuv420p "$FILEPATH" &
 else
-    ffmpeg -f x11grab -framerate 60 -video_size "$RES" -i ":0.0" \
+    ffmpeg -f x11grab -framerate 60 -i ":0.0" \
         -c:v libx264 -preset ultrafast -crf 23 -pix_fmt yuv420p "$FILEPATH" &
 fi
 

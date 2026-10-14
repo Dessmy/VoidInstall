@@ -1,0 +1,40 @@
+#!/bin/sh
+# Pick a resolution for a monitor and save it as an Xorg config.
+# Takes effect after restarting X (no xrandr needed). Run it in a terminal: sudo asks for your password.
+
+CONF_DIR="${CONF_DIR:-/etc/X11/xorg.conf.d}"
+LOG="$HOME/.local/share/xorg/Xorg.0.log"
+[ -f "$LOG" ] || LOG=/var/log/Xorg.0.log
+
+outputs=$(sed -n 's/.*Output \([^ ]*\) connected.*/\1/p' "$LOG" 2>/dev/null | sort -u)
+if [ -z "$outputs" ]; then
+    echo "No monitor found in the Xorg log ($LOG)."
+    sleep 4
+    exit 1
+fi
+
+if [ "$(printf '%s\n' "$outputs" | wc -l)" -eq 1 ]; then
+    out="$outputs"
+else
+    out=$(printf '%s\n' "$outputs" | dmenu -l 10 -p "Monitor>")
+    [ -z "$out" ] && exit 0
+fi
+
+modes=$(cat /sys/class/drm/card*-*/modes 2>/dev/null | sort -t x -k1,1nr -k2,2nr -u)
+mode=$(printf 'default (remove setting)\n%s\n' "$modes" | dmenu -l 15 -p "Resolution $out>")
+[ -z "$mode" ] && exit 0
+
+file="$CONF_DIR/10-monitor-$out.conf"
+if [ "$mode" = "default (remove setting)" ]; then
+    sudo rm -f "$file"
+    msg="Resolution setting for $out removed"
+else
+    sudo mkdir -p "$CONF_DIR"
+    printf 'Section "Monitor"\n    Identifier "%s"\n    Option "PreferredMode" "%s"\nEndSection\n' "$out" "$mode" |
+        sudo tee "$file" >/dev/null
+    msg="$out: $mode saved"
+fi
+
+notify-send -a display 'Display' "$msg. Restart X to apply (Super+Shift+q, then startx)."
+echo "$msg. Restart X to apply."
+sleep 3
