@@ -45,7 +45,7 @@ static const Layout layouts[] = {
 };
 
 /* key definitions */
-#define MODKEY Mod1Mask
+#define MODKEY Mod4Mask /* Super key */
 #define TAGKEYS(KEY,TAG) \
 	{ MODKEY,                       KEY,      view,           {.ui = 1 << TAG} }, \
 	{ MODKEY|ControlMask,           KEY,      toggleview,     {.ui = 1 << TAG} }, \
@@ -95,6 +95,19 @@ static const Key keys[] = {
 	TAGKEYS(                        XK_8,                      7)
 	TAGKEYS(                        XK_9,                      8)
 	{ MODKEY|ShiftMask,             XK_q,      quit,           {0} },
+
+	/* scripts (~/.local/bin) */
+	{ MODKEY,                       XK_a,            spawn, SHCMD("$HOME/.local/bin/launchr") },
+	{ MODKEY,                       XK_v,            spawn, SHCMD("$HOME/.local/bin/clipboard") },
+	{ MODKEY,                       XK_w,            spawn, SHCMD("$HOME/.local/bin/wifi") },
+	{ MODKEY|ShiftMask,             XK_b,            spawn, SHCMD("$HOME/.local/bin/bluetooth") },
+	{ MODKEY,                       XK_x,            spawn, SHCMD("$HOME/.local/bin/xrandr") },
+	{ MODKEY,                       XK_s,            spawn, SHCMD("$HOME/.local/bin/screenshot") },
+	{ MODKEY|ShiftMask,             XK_s,            spawn, SHCMD("$HOME/.local/bin/screenshot area") },
+	{ MODKEY,                       XK_r,            spawn, SHCMD("$HOME/.local/bin/record") },
+	{ MODKEY|ShiftMask,             XK_r,            spawn, SHCMD("$HOME/.local/bin/record area") },
+	{ MODKEY,                       XK_bracketright, spawn, SHCMD("$HOME/.local/bin/wallpaper next") },
+	{ MODKEY,                       XK_bracketleft,  spawn, SHCMD("$HOME/.local/bin/wallpaper prev") },
 };
 
 /* button definitions */
