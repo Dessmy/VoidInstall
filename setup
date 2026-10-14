@@ -253,8 +253,8 @@ CORE_PKGS="base-system linux-firmware grub dbus iwd"
 EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez
 xorg-minimal xorg-input-drivers xinit font-firacode
 slop maim xclip xrandr xsetroot setxkbmap
-xset xwallpaper dunst nnn neovim fastfetch qutebrowser brightnessctl htop jq
-tlp wireguard-tools openresolv mesa-dri"
+xset xwallpaper dunst nnn neovim fastfetch qutebrowser brightnessctl htop
+tlp openresolv mesa-dri"
 
 # CPU microcode
 if [ "$CPU_VENDOR" = "GenuineIntel" ]; then
