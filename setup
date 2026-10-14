@@ -253,7 +253,7 @@ CORE_PKGS="base-system linux-firmware grub dbus iwd"
 EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez
 xorg-minimal xorg-input-drivers xinit font-firacode
 slop maim xclip xrandr xsetroot setxkbmap
-xset xwallpaper dunst nnn bc neovim fastfetch qutebrowser brightnessctl htop jq
+xset xwallpaper dunst nnn neovim fastfetch qutebrowser brightnessctl htop jq
 tlp wireguard-tools openresolv mesa-dri"
 
 # CPU microcode
@@ -467,7 +467,7 @@ echo 'fs.file-max = 2097152' >/etc/sysctl.d/99-filemax.conf
 
 # User directories
 H="/home/${USERNAME}"
-mkdir -p "$H/Downloads" "$H/Music" "$H/Pictures" "$H/Videos" "$H/.config" "$H/.local/bin"
+mkdir -p "$H/Downloads" "$H/Music" "$H/Pictures" "$H/Videos" "$H/.config" "$H/.local/bin" "$H/.local/state/bash"
 
 # Configs ask for "FiraCode Nerd Font": point that name to Fira Code (repo, no icons)
 log "Configuring Fira Code font alias..."
