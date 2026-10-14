@@ -251,9 +251,10 @@ CORE_PKGS="base-system linux-firmware grub dbus iwd"
 
 # Extra packages: missing ones are skipped with a warning
 EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez
-xorg-minimal xorg-input-drivers xinit libX11-devel font-firacode slop maim xclip xrandr xsetroot setxkbmap
-xset xwallpaper dunst nnn neovim fastfetch qutebrowser brightnessctl htop jq
-tlp openresolv mesa-dri"
+xorg-minimal xorg-input-drivers xinit font-firacode
+slop maim xclip xrandr xsetroot setxkbmap
+xset xwallpaper dunst nnn bc neovim fastfetch qutebrowser brightnessctl htop jq
+tlp wireguard-tools openresolv mesa-dri"
 
 # CPU microcode
 if [ "$CPU_VENDOR" = "GenuineIntel" ]; then
@@ -483,6 +484,12 @@ cat >/etc/fonts/local.conf <<'FONTCONF'
 </fontconfig>
 FONTCONF
 fc-cache -f
+
+# Build dependencies: installed here (not skip-if-missing) so a failure is explicit
+log "Installing build dependencies..."
+xbps-install -Sy make gcc pkg-config libX11-devel libXft-devel libXinerama-devel libXrandr-devel libXext-devel freetype-devel harfbuzz-devel fontconfig-devel \
+  || { echo "!! build dependencies failed to install" >&2; exit 1; }
+[ -f /usr/include/X11/Xlib.h ] || { echo "!! /usr/include/X11/Xlib.h is missing after installing libX11-devel" >&2; exit 1; }
 
 # Clone suckless tools into ~/.config, overwrite config.def.h with ours, build
 set -o pipefail
