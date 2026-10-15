@@ -505,12 +505,6 @@ for tool in dwm st dmenu slock; do
     warn "No config.def.h for $tool in dotfiles, using upstream default."
   fi
   rm -f "$H/.config/$tool/config.h"
-  if [ "$tool" = "dwm" ]; then
-    # `dwm -s "text"` sets the bar text (replaces xsetroot -name): small patch to main() in dwm.c
-    sed -i 's|^\telse if (argc != 1)$|\telse if (argc == 3 \&\& !strcmp("-s", argv[1])) {\n\t\tif (!(dpy = XOpenDisplay(NULL)))\n\t\t\tdie("dwm: cannot open display");\n\t\tXStoreName(dpy, DefaultRootWindow(dpy), argv[2]);\n\t\tXCloseDisplay(dpy);\n\t\treturn 0;\n\t} else if (argc != 1)|; s|die("usage: dwm \[-v\]");|die("usage: dwm [-v] [-s status]");|' "$H/.config/dwm/dwm.c"
-    grep -q 'XStoreName(dpy, DefaultRootWindow(dpy), argv\[2\])' "$H/.config/dwm/dwm.c" \
-      || { echo "!! dwm.c main() changed upstream: the -s patch did not apply" >&2; exit 1; }
-  fi
   (cd "$H/.config/$tool" && make clean install && make clean) 2>&1 | tee "/root/$tool-build.log"
 done
 
@@ -559,10 +553,23 @@ for item in "$DOT"/*; do
   esac
 done
 
+# Status bar: compile the C program (source stays next to it in ~/.local/bin/statusbar.c)
+if [ -f "$H/.local/bin/statusbar.c" ]; then
+  log "Building statusbar..."
+  cc -O2 -Wall -o "$H/.local/bin/statusbar" "$H/.local/bin/statusbar.c" -lX11
+else
+  warn "scripts/statusbar.c not found in dotfiles: the bar will stay empty."
+fi
+
 # Fallback .bash_profile so .bashrc loads on login
 if [ ! -f "$H/.bash_profile" ]; then
   echo '[[ -f "$HOME/.bashrc" ]] && source "$HOME/.bashrc"' >"$H/.bash_profile"
 fi
+
+# Backlight: let group "video" write brightness (used by ~/.local/bin/brightness)
+cat >/etc/udev/rules.d/90-backlight.rules <<'UDEVRULE'
+ACTION=="add", SUBSYSTEM=="backlight", RUN+="/bin/chgrp video /sys/class/backlight/%k/brightness", RUN+="/bin/chmod g+w /sys/class/backlight/%k/brightness"
+UDEVRULE
 
 # Keyboard layout for X (no setxkbmap needed)
 mkdir -p /etc/X11/xorg.conf.d
