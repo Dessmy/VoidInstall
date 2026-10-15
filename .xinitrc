@@ -1,7 +1,7 @@
 #!/bin/sh
 # ~/.xinitrc - Void Linux X11 startup for dwm
 # iwd + dhcpcd for network
-# Simple shell statusbar (no slstatus)
+# Status (no slstatus)
 
 # ==============================================================================
 # X11 Resources & Settings
@@ -9,9 +9,6 @@
 
 # Disable beep
 xset -b &
-
-# Set cursor
-xsetroot -cursor_name left_ptr &
 
 # DPMS / Screen blanking
 xset s off
@@ -44,33 +41,10 @@ WP_PID=$!
 tlp start &
 
 # ==============================================================================
-# Simple Shell Statusbar (no slstatus, no compiled binary)
-# Updates root window name every second - dwm reads this for the bar
+# Status: tiny C program (source and binary in ~/.config/status/) writes
+# the dwm bar text directly with Xlib once a minute. No xsetroot, no forks.
 # ==============================================================================
-while true; do
-  # Battery
-  bat_cap="$(cat /sys/class/power_supply/BAT0/capacity 2>/dev/null || echo '?')"
-  bat_status="$(cat /sys/class/power_supply/BAT0/status 2>/dev/null || echo '?')"
-  case "$bat_status" in
-    Charging) bat_icon="+" ;;
-    Discharging) bat_icon="-" ;;
-    Full) bat_icon="=" ;;
-    *) bat_icon="?" ;;
-  esac
-
-  # Volume (wpctl from wireplumber)
-  vol_line="$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null || echo '0.00')"
-  vol="$(echo "$vol_line" | awk '{print int($2*100)}')"
-  echo "$vol_line" | grep -q MUTED && mute="true" || mute="false"
-  [ "$mute" = "true" ] && vol_icon="M" || vol_icon="V"
-
-  # Date/time
-  dt="$(date '+%a %d %b %H:%M')"
-
-  # Set root window name (dwm bar)
-  xsetroot -name "BAT $bat_icon$bat_cap% | VOL $vol_icon$vol% | $dt"
-  sleep 1
-done &
+"$HOME/.config/status/status" &
 
 # ==============================================================================
 # Window Manager
