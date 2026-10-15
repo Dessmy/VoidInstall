@@ -553,12 +553,12 @@ for item in "$DOT"/*; do
   esac
 done
 
-# Status bar: compile the C program (source stays next to it in ~/.local/bin/statusbar.c)
-if [ -f "$H/.local/bin/statusbar.c" ]; then
+# Status bar: compile the C program (source stays in ~/.config/status/status.c)
+if [ -f "$H/.config/status/status.c" ]; then
   log "Building statusbar..."
-  cc -O2 -Wall -o "$H/.local/bin/statusbar" "$H/.local/bin/statusbar.c" -lX11
+  cc -O2 -Wall -o "$H/.local/bin/statusbar" "$H/.config/status/status.c" -lX11
 else
-  warn "scripts/statusbar.c not found in dotfiles: the bar will stay empty."
+  warn "status/status.c not found in dotfiles: the bar will stay empty."
 fi
 
 # Fallback .bash_profile so .bashrc loads on login
