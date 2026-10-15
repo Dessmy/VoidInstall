@@ -1,6 +1,6 @@
 /* status: writes the dwm bar text (root window name) directly with Xlib.
  * One process, no forks, no xsetroot; wakes up once a minute.
- * Build: cc -O2 -o statusbar status.c -lX11 */
+ * Build: cc -O2 -o status status.c -lX11 (binary stays next to this file) */
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <string.h>
@@ -31,7 +31,7 @@ int main(void)
 	Window root;
 
 	if (!dpy) {
-		fputs("statusbar: cannot open display\n", stderr);
+		fputs("status: cannot open display\n", stderr);
 		return 1;
 	}
 	root = DefaultRootWindow(dpy);
