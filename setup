@@ -227,7 +227,7 @@ EOF
 mkdir -p /mnt/var/db/xbps/keys
 cp /var/db/xbps/keys/* /mnt/var/db/xbps/keys/ 2>/dev/null || true
 
-CORE_PKGS="base-system linux-firmware grub dbus iwd libX11-devel libXft-devel libXinerama-devel libXext-devel freetype-devel harfbuzz-devel fontconfig-devel"
+CORE_PKGS="base-system linux-firmware grub dbus iwd libX11-devel libXft-devel libXinerama-devel libXext-devel freetype-devel harfbuzz-devel fontconfig-devel libXrandr-devel make gcc pkg-config"
 [ "$BOOT_MODE" = "uefi" ] && CORE_PKGS="$CORE_PKGS grub-x86_64-efi efibootmgr"
 [ "$ENCRYPT" -eq 1 ] && CORE_PKGS="$CORE_PKGS lvm2 cryptsetup"
 
@@ -389,6 +389,16 @@ SUDOERS
 chmod 0440 /etc/sudoers.d/10-wheel
 visudo -cf /etc/sudoers.d/10-wheel || exit 1
 
+# iwd config
+mkdir -p /etc/iwd
+cat >/etc/iwd/main.conf <<'IWDCONF'
+[General]
+EnableNetworkConfiguration=true
+
+[Network]
+NameResolvingService=resolvconf
+IWDCONF
+
 # Enable services
 mkdir -p /etc/runit/runsvdir/default
 for svc in dbus iwd bluetoothd; do
@@ -511,6 +521,7 @@ if [ ! -f "$H/.bash_profile" ]; then
 fi
 
 # Backlight
+mkdir -p /etc/udev/rules.d
 cat >/etc/udev/rules.d/90-backlight.rules <<'UDEVRULE'
 ACTION=="add", SUBSYSTEM=="backlight", RUN+="/bin/chgrp video /sys/class/backlight/%k/brightness", RUN+="/bin/chmod g+w /sys/class/backlight/%k/brightness"
 UDEVRULE
@@ -583,6 +594,9 @@ fi
 # Configure all packages
 xbps-reconfigure -fa
 grub-mkconfig -o /boot/grub/grub.cfg
+
+# Fix ownership of home (everything above ran as root)
+chown -R "$USERNAME:$USERNAME" "/home/$USERNAME"
 
 # Cleanup
 rm -f /root/*-build.log
