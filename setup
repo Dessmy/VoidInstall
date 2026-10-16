@@ -228,7 +228,7 @@ EOF
 mkdir -p /mnt/var/db/xbps/keys
 cp /var/db/xbps/keys/* /mnt/var/db/xbps/keys/ 2>/dev/null || true
 
-CORE_PKGS="base-system linux-firmware grub dbus iwd libX11-devel libXft-devel libXinerama-devel libXrandr-devel libXext-devel freetype-devel harfbuzz-devel fontconfig-devel"
+CORE_PKGS="base-system linux-firmware grub dbus iwd libX11-devel libXft-devel libXinerama-devel libXext-devel freetype-devel harfbuzz-devel fontconfig-devel"
 [ "$BOOT_MODE" = "uefi" ] && CORE_PKGS="$CORE_PKGS grub-x86_64-efi efibootmgr"
 [ "$ENCRYPT" -eq 1 ] && CORE_PKGS="$CORE_PKGS lvm2 cryptsetup"
 
@@ -547,26 +547,6 @@ export PATH="$HOME/.local/bin:$PATH"
 LOCALBINPATH
 fi
 
-# NVIDIA helpers (offload only through prime-run, not global env)
-if [ "$HAS_NVIDIA" -eq 1 ]; then
-  cat >/usr/local/bin/prime-run <<'PRIMERUN'
-#!/bin/sh
-export __NV_PRIME_RENDER_OFFLOAD=1
-export __GLX_VENDOR_LIBRARY_NAME=nvidia
-export __VK_LAYER_NV_optimus=NVIDIA_only
-exec "$@"
-PRIMERUN
-  chmod +x /usr/local/bin/prime-run
-
-  cat >>"$H/.bashrc" <<'NVIDIATEST'
-
-# NVIDIA Prime Render Offload alias
-alias prime='prime-run'
-NVIDIATEST
-fi
-
-chown -R "${USERNAME}:${USERNAME}" "$H"
-
 # Root configs symlink
 mkdir -p /root/.config
 for d in "$H"/.config/*/; do
@@ -574,18 +554,6 @@ for d in "$H"/.config/*/; do
   dname=$(basename "$d")
   rm -rf "/root/.config/$dname"
   ln -sf "$H/.config/$dname" "/root/.config/$dname"
-done
-
-# Sudoers for common operations
-cat >/etc/sudoers.d/30-vpn <<'SUDOERS'
-%wheel ALL=(root) NOPASSWD: /usr/bin/wg-quick up *, /usr/bin/wg-quick down *
-SUDOERS
-cat >/etc/sudoers.d/31-power <<'SUDOERS'
-%wheel ALL=(root) NOPASSWD: /usr/bin/tlp bat, /usr/bin/tlp ac, /usr/bin/tlp-stat *, /usr/bin/tlp start, /usr/local/bin/prime-run *
-SUDOERS
-for f in 30-vpn 31-power; do
-  chmod 0440 "/etc/sudoers.d/$f"
-  visudo -cf "/etc/sudoers.d/$f" || rm -f "/etc/sudoers.d/$f"
 done
 
 # NVIDIA driver setup (hybrid GPU)
