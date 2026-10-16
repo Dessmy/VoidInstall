@@ -1,6 +1,3 @@
-/* status: writes the dwm bar text (root window name) directly with Xlib.
- * One process, no forks, no xsetroot; wakes up once a minute.
- * Build: cc -O2 -o status status.c -lX11 (binary stays next to this file) */
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <string.h>
