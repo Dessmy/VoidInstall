@@ -2,14 +2,7 @@
 # Void Linux (glibc, runit) full installer + dotfiles
 set -e
 
-error() {
-  echo "ERROR: $1" >&2
-  exit 1
-}
-log() { echo ">> $1"; }
-warn() { echo "!! $1" >&2; }
-
-[ "$(id -u)" -eq 0 ] || error "Run as root: sudo ./setup"
+[ "$(id -u)" -eq 0 ] || exit 1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export XBPS_ARCH=x86_64
@@ -23,11 +16,10 @@ else
   BOOT_MODE="bios"
 fi
 
-log "Boot mode: $BOOT_MODE"
 lsblk -d -o NAME,SIZE,MODEL
 
 read -rp "Target disk (e.g. /dev/sda or /dev/nvme0n1): " DISK
-[ -b "$DISK" ] || error "Disk not found."
+[ -b "$DISK" ] || exit 1
 
 read -rp "Hostname [void]: " HOSTNAME
 HOSTNAME=${HOSTNAME:-void}
@@ -50,7 +42,7 @@ USER_HASH=$(get_hash "$USERNAME")
 read -rp "Timezone [UTC]: " TIMEZONE
 TIMEZONE=${TIMEZONE:-UTC}
 LOCALE="en_US.UTF-8"
-[ -e "/usr/share/zoneinfo/${TIMEZONE}" ] || error "Invalid timezone: $TIMEZONE"
+[ -e "/usr/share/zoneinfo/${TIMEZONE}" ] || exit 1
 
 read -rp "Keyboard layout [us]: " KBLAYOUT
 KBLAYOUT=${KBLAYOUT:-us}
@@ -64,7 +56,7 @@ echo
 echo "Swap = disk space the system uses as overflow when RAM is full (also needed for hibernate)."
 read -rp "Swap size (e.g. 2G, 0 = no swap) [2G]: " SWAP_SIZE
 SWAP_SIZE=${SWAP_SIZE:-2G}
-[[ "$SWAP_SIZE" =~ ^([0-9]+[MG]|0)$ ]] || error "Invalid swap size: $SWAP_SIZE (e.g. 2G or 0)"
+[[ "$SWAP_SIZE" =~ ^([0-9]+[MG]|0)$ ]] || exit 1
 
 VG_NAME=voidvm
 read -rp "Encrypt the whole disk (LUKS1 + LVM, Void handbook FDE)? [y/N]: " FDE_CHOICE
@@ -73,12 +65,12 @@ case "$FDE_CHOICE" in y | Y | yes | YES) ENCRYPT=1 ;; esac
 if [ "$ENCRYPT" -eq 1 ]; then
   read -rp "Root volume size [10G]: " LV_ROOT
   LV_ROOT=${LV_ROOT:-10G}
-  [[ "$LV_ROOT" =~ ^[0-9]+[MGT]$ ]] || error "Invalid root size: $LV_ROOT (e.g. 10G)"
+  [[ "$LV_ROOT" =~ ^[0-9]+[MGT]$ ]] || exit 1
   echo "The rest of the disk becomes /home. You will be asked for the LUKS passphrase."
 fi
 
 read -rp "Type 'YES' to continue: " CONFIRM
-[ "$CONFIRM" = "YES" ] || error "Aborted."
+[ "$CONFIRM" = "YES" ] || exit 1
 
 
 # Disk prefix for partitions
@@ -88,7 +80,6 @@ else
   PART_PREFIX="${DISK}"
 fi
 
-log "Unmounting existing partitions..."
 swapoff -a 2>/dev/null || true
 umount -R /mnt 2>/dev/null || true
 vgchange -an "$VG_NAME" 2>/dev/null || true
@@ -97,12 +88,10 @@ for part in "${PART_PREFIX}"*; do
   [ -b "$part" ] && umount -f "$part" 2>/dev/null || true
 done
 
-log "Wiping disk..."
 wipefs -af "$DISK"
 blockdev --rereadpt "$DISK" 2>/dev/null || true
 sleep 1
 
-log "Partitioning (sfdisk)..."
 if [ "$BOOT_MODE" = "uefi" ]; then
   sfdisk --wipe always --wipe-partitions always "$DISK" <<SFDISK
 label: gpt
@@ -148,7 +137,7 @@ wait_for_blockdev() {
 }
 
 lsblk "$DISK" 2>/dev/null || true
-wait_for_blockdev "$ROOT_PART" || error "$ROOT_PART not found."
+wait_for_blockdev "$ROOT_PART" || exit 1
 
 mkfs_fs() { # label device
   mkfs.ext4 -F -L "$1" "$2"
@@ -157,7 +146,6 @@ mkfs_fs() { # label device
 HOME_LV=0
 if [ "$ENCRYPT" -eq 1 ]; then
   # Handbook: Full Disk Encryption (LUKS1 + LVM)
-  log "Setting up LUKS1 + LVM..."
   xbps-install -y lvm2 cryptsetup 2>/dev/null || true
   modprobe dm_mod 2>/dev/null || true
   modprobe dm_crypt 2>/dev/null || true
@@ -172,7 +160,6 @@ if [ "$ENCRYPT" -eq 1 ]; then
     lvcreate --name home -l 100%FREE "$VG_NAME"
     HOME_LV=1
   fi
-  log "Formatting volumes..."
   mkfs_fs root "/dev/$VG_NAME/root"
   [ "$HOME_LV" -eq 1 ] && mkfs_fs home "/dev/$VG_NAME/home"
   if [ "$SWAP_SIZE" != "0" ]; then
@@ -181,19 +168,17 @@ if [ "$ENCRYPT" -eq 1 ]; then
   fi
   ROOT_DEV="/dev/$VG_NAME/root"
 else
-  log "Formatting partitions..."
   wipefs -af "$ROOT_PART" 2>/dev/null || true
   mkfs_fs root "$ROOT_PART"
   ROOT_DEV="$ROOT_PART"
 fi
 
 if [ "$BOOT_MODE" = "uefi" ]; then
-  wait_for_blockdev "$EFI_PART" || error "$EFI_PART not found."
+  wait_for_blockdev "$EFI_PART" || exit 1
   wipefs -af "$EFI_PART" 2>/dev/null || true
   mkfs.vfat -F 32 "$EFI_PART"
 fi
 
-log "Mounting..."
 mount "$ROOT_DEV" /mnt
 if [ "$HOME_LV" -eq 1 ]; then
   mkdir -p /mnt/home
@@ -205,7 +190,6 @@ if [ "$BOOT_MODE" = "uefi" ]; then
 fi
 
 # GPU detection
-log "Detecting GPU..."
 GPU_INFO=$(lspci -nnk | grep -Ei "VGA compatible controller|3D controller|Display controller" || true)
 HAS_NVIDIA=0
 HAS_INTEL=0
@@ -213,7 +197,6 @@ HAS_AMD=0
 echo "$GPU_INFO" | grep -qi nvidia && HAS_NVIDIA=1
 echo "$GPU_INFO" | grep -qi intel && HAS_INTEL=1
 echo "$GPU_INFO" | grep -Eqi "amd|ati|radeon" && HAS_AMD=1
-log "GPU detected: NVIDIA=$HAS_NVIDIA Intel=$HAS_INTEL AMD=$HAS_AMD"
 
 # CPU microcode vendor (independent from GPU)
 CPU_VENDOR=$(grep -m1 vendor_id /proc/cpuinfo | awk '{print $3}')
@@ -224,8 +207,6 @@ if [ -n "$MIRROR_COUNTRY" ]; then
   CAND="https://repo-$(echo "$MIRROR_COUNTRY" | tr '[:upper:]' '[:lower:]').voidlinux.org"
   if curl -fsI --max-time 10 "$CAND/current/" >/dev/null 2>&1; then
     REPO_BASE="$CAND"
-  else
-    warn "Mirror '$MIRROR_COUNTRY' not reachable, using default."
   fi
 fi
 
@@ -240,16 +221,11 @@ EOF
 mkdir -p /mnt/var/db/xbps/keys
 cp /var/db/xbps/keys/* /mnt/var/db/xbps/keys/ 2>/dev/null || true
 
-log "Syncing repositories..."
-xbps-install -S -y -r /mnt || error "Repository sync failed."
-
-# Core packages: must exist, otherwise abort
 # base-system already provides the kernel (linux), less, e2fsprogs, dosfstools -> not listed here
-CORE_PKGS="base-system linux-firmware grub dbus iwd"
+CORE_PKGS="base-system linux-firmware grub dbus iwd make gcc pkg-config libX11-devel libXft-devel libXinerama-devel libXrandr-devel libXext-devel freetype-devel harfbuzz-devel fontconfig-devel"
 [ "$BOOT_MODE" = "uefi" ] && CORE_PKGS="$CORE_PKGS grub-x86_64-efi efibootmgr"
 [ "$ENCRYPT" -eq 1 ] && CORE_PKGS="$CORE_PKGS lvm2 cryptsetup"
 
-# Extra packages: missing ones are skipped with a warning
 EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez
 xorg-minimal xorg-input-drivers xinit font-firacode
 slop maim xclip
@@ -265,48 +241,27 @@ fi
 
 # GPU-specific packages
 if [ "$HAS_INTEL" -eq 1 ]; then
-  log "Adding Intel GPU packages..."
   EXTRA_PKGS="$EXTRA_PKGS mesa-vulkan-intel libva-intel-driver intel-media-driver intel-video-accel xf86-video-intel"
 fi
 
 if [ "$HAS_AMD" -eq 1 ]; then
-  log "Adding AMD GPU packages..."
   EXTRA_PKGS="$EXTRA_PKGS mesa-vulkan-radeon xf86-video-amdgpu mesa-vaapi linux-firmware-amd"
 fi
 
 if [ "$HAS_NVIDIA" -eq 1 ]; then
-  log "Adding NVIDIA GPU packages..."
   EXTRA_PKGS="$EXTRA_PKGS linux-headers nvidia nvidia-libs-32bit nvidia-opencl"
 fi
 
-# Core check (fatal)
-for p in $CORE_PKGS; do
-  xbps-query -R -r /mnt "$p" >/dev/null 2>&1 || error "Core package not found: $p"
-done
-
-# Extra check (skip missing)
-FINAL_PKGS="$CORE_PKGS"
-for p in $(echo $EXTRA_PKGS | tr ' ' '\n' | sort -u); do
-  if xbps-query -R -r /mnt "$p" >/dev/null 2>&1; then
-    FINAL_PKGS="$FINAL_PKGS $p"
-  else
-    warn "Package not found, skipped: $p"
-  fi
-done
-
-log "Installing base system..."
-xbps-install -y -r /mnt $FINAL_PKGS || error "xbps-install failed."
+xbps-install -Sy -r /mnt $CORE_PKGS $EXTRA_PKGS || exit 1
 
 # Swap file (non-encrypted layout; the encrypted layout uses a swap volume)
 if [ "$ENCRYPT" -eq 0 ] && [ "$SWAP_SIZE" != "0" ]; then
-  log "Creating swap file ($SWAP_SIZE)..."
   fallocate -l "$SWAP_SIZE" /mnt/swapfile
   chmod 600 /mnt/swapfile
   mkswap /mnt/swapfile
 fi
 
 # fstab (UUIDs via blkid)
-log "Generating fstab..."
 fstab_line() { # device mountpoint type options pass
   printf 'UUID=%s\t%s\t%s\t%s\t0 %s\n' "$(blkid -s UUID -o value "$1")" "$2" "$3" "$4" "$5"
 }
@@ -320,7 +275,6 @@ fstab_line() { # device mountpoint type options pass
 } >/mnt/etc/fstab
 
 # Copy dotfiles (incl. suckless sources) into the target, without .git
-log "Copying dotfiles..."
 mkdir -p /mnt/root/dotfiles
 tar -C "$SCRIPT_DIR" --exclude=.git -cf - . | tar -C /mnt/root/dotfiles -xf -
 
@@ -350,14 +304,9 @@ cat >/mnt/root/chroot-setup.sh <<'CHROOT_EOF'
 set -e
 . /root/install.env
 
-log() { echo ">> $1"; }
-warn() { echo "!! $1" >&2; }
-
 enable_svc() {
   if [ -d "/etc/sv/$1" ]; then
     ln -sf "/etc/sv/$1" /etc/runit/runsvdir/default/
-  else
-    warn "Service not found: $1"
   fi
 }
 
@@ -486,7 +435,6 @@ H="/home/${USERNAME}"
 mkdir -p "$H/Downloads" "$H/Music" "$H/Pictures" "$H/Videos" "$H/.config" "$H/.local/bin" "$H/.local/state/bash"
 
 # Configs ask for "FiraCode Nerd Font": point that name to Fira Code (repo, no icons)
-log "Configuring Fira Code font alias..."
 cat >/etc/fonts/local.conf <<'FONTCONF'
 <?xml version="1.0"?>
 <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
@@ -501,31 +449,21 @@ cat >/etc/fonts/local.conf <<'FONTCONF'
 FONTCONF
 fc-cache -f
 
-# Build dependencies: installed here (not skip-if-missing) so a failure is explicit
-log "Installing build dependencies..."
-xbps-install -Sy make gcc pkg-config libX11-devel libXft-devel libXinerama-devel libXrandr-devel libXext-devel freetype-devel harfbuzz-devel fontconfig-devel \
-  || { echo "!! build dependencies failed to install" >&2; exit 1; }
-[ -f /usr/include/X11/Xlib.h ] || { echo "!! /usr/include/X11/Xlib.h is missing after installing libX11-devel" >&2; exit 1; }
-
 # Clone suckless tools into ~/.config, overwrite config.def.h with ours, build
 set -o pipefail
 DOT=/root/dotfiles
 for tool in dwm st dmenu slock; do
-  log "Cloning and building $tool..."
   rm -rf "$H/.config/$tool"
   git clone --depth 1 "https://git.suckless.org/$tool" "$H/.config/$tool"
   rm -rf "$H/.config/$tool/.git"
   if [ -f "$DOT/$tool/config.def.h" ]; then
     cp "$DOT/$tool/config.def.h" "$H/.config/$tool/config.def.h"
-  else
-    warn "No config.def.h for $tool in dotfiles, using upstream default."
   fi
   rm -f "$H/.config/$tool/config.h"
   (cd "$H/.config/$tool" && make clean install && make clean) 2>&1 | tee "/root/$tool-build.log"
 done
 
 # Install dotfiles
-log "Installing dotfiles..."
 DOT=/root/dotfiles
 
 # Accept both "name" (file) and "name/name" (dir containing file)
@@ -571,10 +509,7 @@ done
 
 # Status: compile status.c (source and binary both live in ~/.config/status/)
 if [ -f "$H/.config/status/status.c" ]; then
-  log "Building status..."
   cc -O2 -Wall -o "$H/.config/status/status" "$H/.config/status/status.c" -lX11
-else
-  warn "status/status.c not found in dotfiles: the bar will stay empty."
 fi
 
 # Fallback .bash_profile so .bashrc loads on login
@@ -658,7 +593,6 @@ done
 
 # NVIDIA driver setup (hybrid GPU)
 if [ "$HAS_NVIDIA" -eq 1 ] && { [ "$HAS_INTEL" -eq 1 ] || [ "$HAS_AMD" -eq 1 ]; }; then
-  log "Configuring NVIDIA driver..."
 
   cat >/etc/modprobe.d/nvidia.conf <<'NVMEOF'
 options nvidia NVreg_DynamicPowerManagement=0x02 NVreg_EnableGpuFirmware=0
@@ -688,7 +622,6 @@ else
 fi
 
 # Configure all packages: dracut builds the initramfs, GRUB writes its config
-log "Reconfiguring packages..."
 xbps-reconfigure -fa
 grub-mkconfig -o /boot/grub/grub.cfg
 
@@ -705,8 +638,8 @@ if [ ! -s /etc/resolv.conf ]; then
   printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' >/etc/resolv.conf
 fi
 rm -f /mnt/etc/resolv.conf 2>/dev/null || true
-cp -L /etc/resolv.conf /mnt/etc/resolv.conf || error "resolv.conf copy failed."
-[ -s /mnt/etc/resolv.conf ] || error "resolv.conf empty, check network."
+cp -L /etc/resolv.conf /mnt/etc/resolv.conf || exit 1
+[ -s /mnt/etc/resolv.conf ] || exit 1
 
 # Wi-Fi: the live ISO has no iwd, so reuse the wpa_supplicant config made on the live
 # system (/tmp/wpa.conf from wpa_passphrase) and save it as an iwd network -> auto-connects after install
@@ -714,7 +647,6 @@ if [ -f /tmp/wpa.conf ]; then
   WIFI_SSID=$(sed -n 's/^[[:space:]]*ssid="\(.*\)"[[:space:]]*$/\1/p' /tmp/wpa.conf | head -1)
   WIFI_PSK=$(sed -n 's/^[[:space:]]*psk=\([0-9a-fA-F]\{64\}\)[[:space:]]*$/\1/p' /tmp/wpa.conf | head -1)
   if [ -n "$WIFI_SSID" ] && [ -n "$WIFI_PSK" ]; then
-    log "Saving Wi-Fi '$WIFI_SSID' for iwd..."
     IWD_NAME="$WIFI_SSID"
     # iwd file names: plain SSID if it only has letters, digits, space, - or _; else '=' + hex
     if [[ ! "$IWD_NAME" =~ ^[A-Za-z0-9\ _-]+$ ]]; then
@@ -724,13 +656,10 @@ if [ -f /tmp/wpa.conf ]; then
     chmod 700 /mnt/var/lib/iwd
     printf '[Security]\nPreSharedKey=%s\n' "$WIFI_PSK" >"/mnt/var/lib/iwd/${IWD_NAME}.psk"
     chmod 600 "/mnt/var/lib/iwd/${IWD_NAME}.psk"
-  else
-    warn "/tmp/wpa.conf has no ssid/psk, Wi-Fi not saved. Connect later with iwctl."
   fi
 fi
 
 # Chroot and run setup (handbook: manual chroot)
-log "Entering chroot..."
 echo
 [ "$ENCRYPT" -eq 1 ] && echo ">> You will be asked for the LUKS passphrase once more (keyfile setup)."
 for d in sys dev proc; do
