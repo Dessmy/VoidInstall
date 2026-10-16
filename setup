@@ -1,5 +1,4 @@
 #!/bin/bash
-# Void Linux (glibc, runit) full installer + dotfiles
 set -e
 
 [ "$(id -u)" -eq 0 ] || exit 1
@@ -198,17 +197,17 @@ echo "$GPU_INFO" | grep -qi nvidia && HAS_NVIDIA=1
 echo "$GPU_INFO" | grep -qi intel && HAS_INTEL=1
 echo "$GPU_INFO" | grep -Eqi "amd|ati|radeon" && HAS_AMD=1
 
-# Laptop detection: battery present, or DMI chassis type is a portable form factor
+# Battery detection
 IS_LAPTOP=0
 case "$(cat /sys/class/dmi/id/chassis_type 2>/dev/null)" in
   8 | 9 | 10 | 14 | 31 | 32) IS_LAPTOP=1 ;;
 esac
 ls /sys/class/power_supply/BAT* >/dev/null 2>&1 && IS_LAPTOP=1
 
-# CPU microcode vendor (independent from GPU)
+# CPU microcode
 CPU_VENDOR=$(grep -m1 vendor_id /proc/cpuinfo | awk '{print $3}')
 
-# Configure xbps repositories (main + nonfree + multilib/nonfree)
+# Configure xbps repos
 REPO_BASE="https://repo-default.voidlinux.org"
 if [ -n "$MIRROR_COUNTRY" ]; then
   CAND="https://repo-$(echo "$MIRROR_COUNTRY" | tr '[:upper:]' '[:lower:]').voidlinux.org"
@@ -334,7 +333,7 @@ if [ "$ENCRYPT" -eq 1 ]; then
     || echo 'GRUB_ENABLE_CRYPTODISK=y' >>/etc/default/grub
   sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=\"\(.*\)\"|GRUB_CMDLINE_LINUX_DEFAULT=\"\1 rd.lvm.vg=${VG_NAME} rd.luks.uuid=${CRYPT_UUID}\"|" /etc/default/grub
 
-  # Keyfile so the passphrase is only asked once at boot
+  # Keyfile
   dd bs=1 count=64 if=/dev/urandom of=/boot/volume.key
   until cryptsetup luksAddKey "$CRYPT_PART" /boot/volume.key; do
     echo "!! Try again."
@@ -347,18 +346,18 @@ if [ "$ENCRYPT" -eq 1 ]; then
   echo 'install_items+=" /boot/volume.key /etc/crypttab "' >/etc/dracut.conf.d/10-crypt.conf
 fi
 
-# Timezone, clock
+# Timezone
 ln -sf "/usr/share/zoneinfo/${TIMEZONE}" /etc/localtime
 hwclock --systohc 2>/dev/null || true
 
-# Locale (Void glibc uses libc-locales)
+# Locale
 if [ -f /etc/default/libc-locales ]; then
   sed -i "s/^#\s*${LOCALE} UTF-8/${LOCALE} UTF-8/" /etc/default/libc-locales
   xbps-reconfigure -f glibc-locales
 fi
 echo "LANG=${LOCALE}" >/etc/locale.conf
 
-# Console keymap + timezone for rc.conf
+# Console
 if [ -f /etc/rc.conf ]; then
   sed -i "s|^#\?KEYMAP=.*|KEYMAP=\"${KBLAYOUT}\"|" /etc/rc.conf
   sed -i "s|^#\?TIMEZONE=.*|TIMEZONE=\"${TIMEZONE}\"|" /etc/rc.conf
@@ -390,14 +389,13 @@ SUDOERS
 chmod 0440 /etc/sudoers.d/10-wheel
 visudo -cf /etc/sudoers.d/10-wheel || exit 1
 
-# Enable services (runit)
+# Enable services
 mkdir -p /etc/runit/runsvdir/default
 for svc in dbus iwd bluetoothd; do
   enable_svc "$svc"
 done
 
-# Wi-Fi/Bluetooth come up soft-blocked on some laptops: unblock them on every boot.
-# runit restarts a service that exits, so the script idles after unblocking.
+# Rfkill-unblock
 mkdir -p /etc/sv/rfkill-unblock
 cat >/etc/sv/rfkill-unblock/run <<'RFKILLRUN'
 #!/bin/sh
@@ -431,7 +429,6 @@ echo 'fs.file-max = 2097152' >/etc/sysctl.d/99-filemax.conf
 H="/home/${USERNAME}"
 mkdir -p "$H/Downloads" "$H/Music" "$H/Pictures" "$H/Videos" "$H/.config" "$H/.local/bin" "$H/.local/state/bash"
 
-# Configs ask for "FiraCode Nerd Font": point that name to Fira Code (repo, no icons)
 cat >/etc/fonts/local.conf <<'FONTCONF'
 <?xml version="1.0"?>
 <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
@@ -446,7 +443,7 @@ cat >/etc/fonts/local.conf <<'FONTCONF'
 FONTCONF
 fc-cache -f
 
-# Clone suckless tools into ~/.config, overwrite config.def.h with ours, build
+# Clone suckless tools
 set -o pipefail
 DOT=/root/dotfiles
 for tool in dwm st dmenu slock; do
@@ -463,7 +460,6 @@ done
 # Install dotfiles
 DOT=/root/dotfiles
 
-# Accept both "name" (file) and "name/name" (dir containing file)
 src_of() {
   if [ -f "$DOT/$1" ]; then echo "$DOT/$1"
   elif [ -f "$DOT/$1/$1" ]; then echo "$DOT/$1/$1"
@@ -509,17 +505,17 @@ if [ -f "$H/.config/status/status.c" ]; then
   cc -O2 -Wall -o "$H/.config/status/status" "$H/.config/status/status.c" -lX11
 fi
 
-# Fallback .bash_profile so .bashrc loads on login
+# Fallback .bash_profile
 if [ ! -f "$H/.bash_profile" ]; then
   echo '[[ -f "$HOME/.bashrc" ]] && source "$HOME/.bashrc"' >"$H/.bash_profile"
 fi
 
-# Backlight: let group "video" write brightness (used by ~/.local/bin/brightness)
+# Backlight
 cat >/etc/udev/rules.d/90-backlight.rules <<'UDEVRULE'
 ACTION=="add", SUBSYSTEM=="backlight", RUN+="/bin/chgrp video /sys/class/backlight/%k/brightness", RUN+="/bin/chmod g+w /sys/class/backlight/%k/brightness"
 UDEVRULE
 
-# Keyboard layout for X (no setxkbmap needed)
+# Keyboard layout
 mkdir -p /etc/X11/xorg.conf.d
 cat >/etc/X11/xorg.conf.d/00-keyboard.conf <<KBCONF
 Section "InputClass"
@@ -529,7 +525,7 @@ Section "InputClass"
 EndSection
 KBCONF
 
-# Auto-start X on tty1
+# Auto-start
 if ! grep -q 'exec startx' "$H/.bash_profile" 2>/dev/null; then
   cat >>"$H/.bash_profile" <<'AUTOSTARTX'
 
@@ -539,7 +535,6 @@ fi
 AUTOSTARTX
 fi
 
-# PATH for ~/.local/bin
 if ! grep -q '.local/bin' "$H/.bashrc" 2>/dev/null; then
   cat >>"$H/.bashrc" <<'LOCALBINPATH'
 
@@ -556,7 +551,7 @@ for d in "$H"/.config/*/; do
   ln -sf "$H/.config/$dname" "/root/.config/$dname"
 done
 
-# NVIDIA driver setup (hybrid GPU)
+# NVIDIA driver setup
 if [ "$HAS_NVIDIA" -eq 1 ] && { [ "$HAS_INTEL" -eq 1 ] || [ "$HAS_AMD" -eq 1 ]; }; then
 
   cat >/etc/modprobe.d/nvidia.conf <<'NVMEOF'
@@ -570,7 +565,6 @@ DRACUTEOF
 fi
 
 # GRUB
-# No GRUB menu: boot straight into Void (hold Esc or Shift while booting to open it)
 grep -q '^GRUB_TIMEOUT=' /etc/default/grub \
   && sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' /etc/default/grub \
   || echo 'GRUB_TIMEOUT=0' >>/etc/default/grub
@@ -586,7 +580,7 @@ else
   grub-install "${DISK}"
 fi
 
-# Configure all packages: dracut builds the initramfs, GRUB writes its config
+# Configure all packages
 xbps-reconfigure -fa
 grub-mkconfig -o /boot/grub/grub.cfg
 
@@ -606,14 +600,12 @@ rm -f /mnt/etc/resolv.conf 2>/dev/null || true
 cp -L /etc/resolv.conf /mnt/etc/resolv.conf || exit 1
 [ -s /mnt/etc/resolv.conf ] || exit 1
 
-# Wi-Fi: the live ISO has no iwd, so reuse the wpa_supplicant config made on the live
-# system (/tmp/wpa.conf from wpa_passphrase) and save it as an iwd network -> auto-connects after install
+# Wi-Fi
 if [ -f /tmp/wpa.conf ]; then
   WIFI_SSID=$(sed -n 's/^[[:space:]]*ssid="\(.*\)"[[:space:]]*$/\1/p' /tmp/wpa.conf | head -1)
   WIFI_PSK=$(sed -n 's/^[[:space:]]*psk=\([0-9a-fA-F]\{64\}\)[[:space:]]*$/\1/p' /tmp/wpa.conf | head -1)
   if [ -n "$WIFI_SSID" ] && [ -n "$WIFI_PSK" ]; then
     IWD_NAME="$WIFI_SSID"
-    # iwd file names: plain SSID if it only has letters, digits, space, - or _; else '=' + hex
     if [[ ! "$IWD_NAME" =~ ^[A-Za-z0-9\ _-]+$ ]]; then
       IWD_NAME="=$(printf '%s' "$WIFI_SSID" | od -An -tx1 | tr -d ' \n')"
     fi
@@ -624,7 +616,7 @@ if [ -f /tmp/wpa.conf ]; then
   fi
 fi
 
-# Chroot and run setup (handbook: manual chroot)
+# Chroot and run setup
 echo
 [ "$ENCRYPT" -eq 1 ] && echo ">> You will be asked for the LUKS passphrase once more (keyfile setup)."
 for d in sys dev proc; do
