@@ -1,4 +1,7 @@
 #!/bin/sh
+
+# Everything below (dunst, pipewire, polkit agent, dwm) needs a D-Bus session bus
+[ -z "$DBUS_SESSION_BUS_ADDRESS" ] && exec dbus-run-session -- sh "$HOME/.xinitrc"
 # ~/.xinitrc - Void Linux X11 startup for dwm
 # iwd + dhcpcd for network
 # Status (no slstatus)
