@@ -1,4 +1,6 @@
 /* See LICENSE file for copyright and license details. */
+#include <X11/XF86keysym.h>
+
 
 /* appearance */
 static const unsigned int borderpx  = 1;        /* border pixel of windows */
@@ -97,7 +99,8 @@ static const Key keys[] = {
 	{ MODKEY|ShiftMask,             XK_q,      quit,           {0} },
 
 	/* scripts (~/.local/bin) */
-	{ MODKEY,                       XK_a,            spawn, SHCMD("$HOME/.local/bin/launcher") },
+	{ MODKEY|ShiftMask,             XK_l,            spawn, SHCMD("slock") },
+	{ MODKEY,                       XK_a,            spawn, SHCMD("$HOME/.local/bin/launchr") },
 	{ MODKEY,                       XK_v,            spawn, SHCMD("$HOME/.local/bin/clipboard") },
 	{ MODKEY,                       XK_w,            spawn, SHCMD("$HOME/.local/bin/wifi") },
 	{ MODKEY|ShiftMask,             XK_b,            spawn, SHCMD("$HOME/.local/bin/bluetooth") },
@@ -106,6 +109,10 @@ static const Key keys[] = {
 	{ MODKEY|ShiftMask,             XK_s,            spawn, SHCMD("$HOME/.local/bin/screenshot area") },
 	{ MODKEY,                       XK_r,            spawn, SHCMD("$HOME/.local/bin/record") },
 	{ MODKEY|ShiftMask,             XK_r,            spawn, SHCMD("$HOME/.local/bin/record area") },
+	{ 0,                            XF86XK_MonBrightnessUp,   spawn, SHCMD("$HOME/.local/bin/brightness up") },
+	{ 0,                            XF86XK_MonBrightnessDown, spawn, SHCMD("$HOME/.local/bin/brightness down") },
+	{ MODKEY,                       XK_F6,           spawn, SHCMD("$HOME/.local/bin/brightness up") },
+	{ MODKEY,                       XK_F5,           spawn, SHCMD("$HOME/.local/bin/brightness down") },
 	{ MODKEY,                       XK_bracketright, spawn, SHCMD("$HOME/.local/bin/wallpaper next") },
 	{ MODKEY,                       XK_bracketleft,  spawn, SHCMD("$HOME/.local/bin/wallpaper prev") },
 };
