@@ -450,6 +450,11 @@ for svc in dbus iwd bluetoothd tlp; do
   enable_svc "$svc"
 done
 
+# Only tty1 and tty2 get a login prompt (remove the gettys on tty3-6)
+for n in 3 4 5 6; do
+  rm -f "/etc/runit/runsvdir/default/agetty-tty$n"
+done
+
 # Limits
 cat >>/etc/security/limits.conf <<LIMITSCONF
 ${USERNAME}    soft    nofile  524288
