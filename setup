@@ -198,6 +198,13 @@ echo "$GPU_INFO" | grep -qi nvidia && HAS_NVIDIA=1
 echo "$GPU_INFO" | grep -qi intel && HAS_INTEL=1
 echo "$GPU_INFO" | grep -Eqi "amd|ati|radeon" && HAS_AMD=1
 
+# Laptop detection: battery present, or DMI chassis type is a portable form factor
+IS_LAPTOP=0
+case "$(cat /sys/class/dmi/id/chassis_type 2>/dev/null)" in
+  8 | 9 | 10 | 14 | 31 | 32) IS_LAPTOP=1 ;;
+esac
+ls /sys/class/power_supply/BAT* >/dev/null 2>&1 && IS_LAPTOP=1
+
 # CPU microcode vendor (independent from GPU)
 CPU_VENDOR=$(grep -m1 vendor_id /proc/cpuinfo | awk '{print $3}')
 
@@ -230,7 +237,9 @@ EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez
 xorg-minimal xorg-input-drivers xinit font-firacode
 slop maim xclip
 xset xwallpaper dunst nnn neovim fastfetch qutebrowser htop jq
-tlp wireguard-tools openresolv mesa-dri libnotify pulseaudio-utils"
+wireguard-tools openresolv mesa-dri libnotify pulseaudio-utils"
+
+[ "$IS_LAPTOP" -eq 1 ] && EXTRA_PKGS="$EXTRA_PKGS tlp"
 
 # CPU microcode
 if [ "$CPU_VENDOR" = "GenuineIntel" ]; then
