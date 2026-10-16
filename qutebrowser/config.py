@@ -6,7 +6,6 @@ font = "FiraCode Nerd Font"
 
 CONFIG_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Catppuccin Mocha colors
 base00 = "#1e1e2e"
 base01 = "#181825"
 base02 = "#313244"
@@ -39,7 +38,6 @@ c.downloads.remove_finished = 1000
 
 c.auto_save.session = True
 
-# nnn file picker (direct, no external script)
 config.set("fileselect.handler", "external")
 config.set(
     "fileselect.single_file.command",
