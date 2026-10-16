@@ -228,16 +228,14 @@ EOF
 mkdir -p /mnt/var/db/xbps/keys
 cp /var/db/xbps/keys/* /mnt/var/db/xbps/keys/ 2>/dev/null || true
 
-# base-system already provides the kernel (linux), less, e2fsprogs, dosfstools -> not listed here
-CORE_PKGS="base-system linux-firmware grub dbus iwd make gcc pkg-config libX11-devel libXft-devel libXinerama-devel libXrandr-devel libXext-devel freetype-devel harfbuzz-devel fontconfig-devel"
+CORE_PKGS="base-system linux-firmware grub dbus iwd libX11-devel libXft-devel libXinerama-devel libXrandr-devel libXext-devel freetype-devel harfbuzz-devel fontconfig-devel"
 [ "$BOOT_MODE" = "uefi" ] && CORE_PKGS="$CORE_PKGS grub-x86_64-efi efibootmgr"
 [ "$ENCRYPT" -eq 1 ] && CORE_PKGS="$CORE_PKGS lvm2 cryptsetup"
 
 EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez
-xorg-minimal xorg-input-drivers xinit font-firacode
-slop maim xclip
-xset xwallpaper dunst nnn neovim fastfetch qutebrowser htop jq
-wireguard-tools openresolv mesa-dri libnotify pulseaudio-utils"
+xorg-minimal xorg-input-drivers xinit xclip
+xset xautolock xwallpaper font-firacode
+slop maim dunst nnn neovim fastfetch qutebrowser htop openresolv mesa-dri pulseaudio-utils"
 
 [ "$IS_LAPTOP" -eq 1 ] && EXTRA_PKGS="$EXTRA_PKGS tlp"
 
@@ -392,19 +390,9 @@ SUDOERS
 chmod 0440 /etc/sudoers.d/10-wheel
 visudo -cf /etc/sudoers.d/10-wheel || exit 1
 
-# iwd: built-in DHCP + DNS via resolvconf
-mkdir -p /etc/iwd
-cat >/etc/iwd/main.conf <<'IWDCONF'
-[General]
-EnableNetworkConfiguration=true
-
-[Network]
-NameResolvingService=resolvconf
-IWDCONF
-
 # Enable services (runit)
 mkdir -p /etc/runit/runsvdir/default
-for svc in dbus iwd bluetoothd tlp; do
+for svc in dbus iwd bluetoothd; do
   enable_svc "$svc"
 done
 
