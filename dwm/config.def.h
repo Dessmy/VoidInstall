@@ -1,8 +1,9 @@
 /* See LICENSE file for copyright and license details. */
 #include <X11/XF86keysym.h>
 
+
 /* appearance */
-static const unsigned int borderpx  = 1;        /* border pixel of windows */
+static const unsigned int borderpx  = 2;        /* border pixel of windows */
 static const unsigned int snap      = 32;       /* snap pixel */
 static const int showbar            = 1;        /* 0 means no bar */
 static const int topbar             = 1;        /* 0 means bottom bar */
@@ -10,11 +11,11 @@ static const char *fonts[]          = { "FiraCode Nerd Font:size=16:weight=bold"
 static const char col_base[]        = "#1e1e2e";
 static const char col_surface0[]    = "#313244";
 static const char col_text[]        = "#cdd6f4";
-static const char col_blue[]        = "#89b4fa";
+static const char col_mauve[]       = "#cba6f7";
 static const char *colors[][3]      = {
 	/*               fg         bg         border   */
 	[SchemeNorm] = { col_text, col_base, col_surface0 },
-	[SchemeSel]  = { col_base, col_blue,  col_blue  },
+	[SchemeSel]  = { col_text, col_surface0, col_mauve },
 };
 
 /* tagging */
