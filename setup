@@ -26,7 +26,7 @@ HOSTNAME=${HOSTNAME:-void}
 read -rp "New username [user]: " USERNAME
 USERNAME=${USERNAME:-user}
 
-get_hash() { # asks twice, hidden; prints the password hash (openssl is on the live ISO)
+get_hash() {
   local a b
   until [ -n "$a" ] && [ "$a" = "$b" ]; do
     read -rsp "Password for $1: " a; echo >&2
@@ -100,14 +100,12 @@ SFDISK
   EFI_PART="${PART_PREFIX}1"
   ROOT_PART="${PART_PREFIX}2"
 elif [ "$ENCRYPT" -eq 1 ]; then
-  # Handbook FDE on BIOS: MBR with a single bootable partition
   sfdisk --wipe always --wipe-partitions always "$DISK" <<SFDISK
 label: dos
 type=83, bootable
 SFDISK
   ROOT_PART="${PART_PREFIX}1"
 else
-  # BIOS + GPT needs a small BIOS boot partition for GRUB
   sfdisk --wipe always --wipe-partitions always "$DISK" <<SFDISK
 label: gpt
 size=1MiB, type=21686148-6449-6E6F-744E-656564454649
@@ -144,7 +142,6 @@ mkfs_fs() { # label device
 
 HOME_LV=0
 if [ "$ENCRYPT" -eq 1 ]; then
-  # Handbook: Full Disk Encryption (LUKS1 + LVM)
   xbps-install -y lvm2 cryptsetup 2>/dev/null || true
   modprobe dm_mod 2>/dev/null || true
   modprobe dm_crypt 2>/dev/null || true
@@ -204,7 +201,6 @@ case "$(cat /sys/class/dmi/id/chassis_type 2>/dev/null)" in
 esac
 ls /sys/class/power_supply/BAT* >/dev/null 2>&1 && IS_LAPTOP=1
 
-# CPU microcode
 CPU_VENDOR=$(grep -m1 vendor_id /proc/cpuinfo | awk '{print $3}')
 
 # Configure xbps repos
@@ -227,14 +223,13 @@ EOF
 mkdir -p /mnt/var/db/xbps/keys
 cp /var/db/xbps/keys/* /mnt/var/db/xbps/keys/ 2>/dev/null || true
 
-CORE_PKGS="base-system linux-firmware grub dbus iwd libX11-devel libXft-devel libXinerama-devel libXext-devel freetype-devel harfbuzz-devel fontconfig-devel libXrandr-devel make gcc pkg-config"
+CORE_PKGS="base-system linux-firmware grub dbus iwd make gcc pkg-config libX11-devel libXft-devel libXinerama-devel libXext-devel libXrandr-devel freetype-devel harfbuzz-devel fontconfig-devel"
 [ "$BOOT_MODE" = "uefi" ] && CORE_PKGS="$CORE_PKGS grub-x86_64-efi efibootmgr"
 [ "$ENCRYPT" -eq 1 ] && CORE_PKGS="$CORE_PKGS lvm2 cryptsetup"
 
-EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez
-xorg-minimal xorg-input-drivers xinit xclip
+EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez htop openresolv mesa-dri pulseaudio-utils xorg-minimal xorg-input-drivers xinit xclip
 xset xautolock xwallpaper font-firacode
-slop maim dunst nnn neovim fastfetch qutebrowser htop openresolv mesa-dri pulseaudio-utils"
+slop maim dunst nnn neovim fastfetch qutebrowser"
 
 [ "$IS_LAPTOP" -eq 1 ] && EXTRA_PKGS="$EXTRA_PKGS tlp"
 
@@ -242,7 +237,7 @@ slop maim dunst nnn neovim fastfetch qutebrowser htop openresolv mesa-dri pulsea
 if [ "$CPU_VENDOR" = "GenuineIntel" ]; then
   EXTRA_PKGS="$EXTRA_PKGS intel-ucode"
 elif [ "$CPU_VENDOR" = "AuthenticAMD" ]; then
-  EXTRA_PKGS="$EXTRA_PKGS linux-firmware-amd" # AMD microcode lives here on Void
+  EXTRA_PKGS="$EXTRA_PKGS linux-firmware-amd"
 fi
 
 # GPU-specific packages
@@ -260,14 +255,14 @@ fi
 
 xbps-install -Sy -r /mnt $CORE_PKGS $EXTRA_PKGS || exit 1
 
-# Swap file (non-encrypted layout; the encrypted layout uses a swap volume)
+# Swap file
 if [ "$ENCRYPT" -eq 0 ] && [ "$SWAP_SIZE" != "0" ]; then
   fallocate -l "$SWAP_SIZE" /mnt/swapfile
   chmod 600 /mnt/swapfile
   mkswap /mnt/swapfile
 fi
 
-# fstab (UUIDs via blkid)
+# fstab
 fstab_line() { # device mountpoint type options pass
   printf 'UUID=%s\t%s\t%s\t%s\t0 %s\n' "$(blkid -s UUID -o value "$1")" "$2" "$3" "$4" "$5"
 }
@@ -280,7 +275,7 @@ fstab_line() { # device mountpoint type options pass
   printf 'tmpfs\t/tmp\ttmpfs\trw,nosuid,nodev,size=10%%,mode=1777\t0 0\n'
 } >/mnt/etc/fstab
 
-# Copy dotfiles (incl. suckless sources) into the target, without .git
+# Copy dotfiles
 mkdir -p /mnt/root/dotfiles
 tar -C "$SCRIPT_DIR" --exclude=.git -cf - . | tar -C /mnt/root/dotfiles -xf -
 
@@ -304,7 +299,7 @@ tar -C "$SCRIPT_DIR" --exclude=.git -cf - . | tar -C /mnt/root/dotfiles -xf -
 } >/mnt/root/install.env
 chmod 600 /mnt/root/install.env
 
-# Chroot setup script - COMPLETE system configuration
+# Chroot setup
 cat >/mnt/root/chroot-setup.sh <<'CHROOT_EOF'
 #!/bin/bash
 set -e
@@ -318,7 +313,7 @@ enable_svc() {
 
 usermod -p "$ROOT_HASH" root
 
-# Full disk encryption (handbook: FDE guide)
+# Full disk encryption
 if [ "$ENCRYPT" -eq 1 ]; then
   echo
   echo "=== Full disk encryption: keyfile setup ==="
@@ -327,7 +322,6 @@ if [ "$ENCRYPT" -eq 1 ]; then
 
   CRYPT_UUID=$(blkid -o value -s UUID "$CRYPT_PART")
 
-  # GRUB must be able to unlock the volume; the kernel must find it
   grep -q '^GRUB_ENABLE_CRYPTODISK=' /etc/default/grub \
     && sed -i 's/^GRUB_ENABLE_CRYPTODISK=.*/GRUB_ENABLE_CRYPTODISK=y/' /etc/default/grub \
     || echo 'GRUB_ENABLE_CRYPTODISK=y' >>/etc/default/grub
@@ -357,7 +351,6 @@ if [ -f /etc/default/libc-locales ]; then
 fi
 echo "LANG=${LOCALE}" >/etc/locale.conf
 
-# Console
 if [ -f /etc/rc.conf ]; then
   sed -i "s|^#\?KEYMAP=.*|KEYMAP=\"${KBLAYOUT}\"|" /etc/rc.conf
   sed -i "s|^#\?TIMEZONE=.*|TIMEZONE=\"${TIMEZONE}\"|" /etc/rc.conf
@@ -370,7 +363,6 @@ cat >>/etc/hosts <<HOSTS
 127.0.1.1   ${HOSTNAME}.localdomain ${HOSTNAME}
 HOSTS
 
-# User: only add groups that exist on Void
 GROUPS_OK="wheel"
 for g in audio video input lp storage network kvm optical bluetooth _seatd; do
   getent group "$g" >/dev/null && GROUPS_OK="$GROUPS_OK,$g"
@@ -403,21 +395,6 @@ IWDCONF
 mkdir -p /etc/runit/runsvdir/default
 for svc in dbus iwd bluetoothd; do
   enable_svc "$svc"
-done
-
-# Rfkill-unblock
-mkdir -p /etc/sv/rfkill-unblock
-cat >/etc/sv/rfkill-unblock/run <<'RFKILLRUN'
-#!/bin/sh
-rfkill unblock all
-exec sleep infinity
-RFKILLRUN
-chmod +x /etc/sv/rfkill-unblock/run
-enable_svc rfkill-unblock
-
-# Only tty1 and tty2 get a login prompt (remove the gettys on tty3-6)
-for n in 3 4 5 6; do
-  rm -f "/etc/runit/runsvdir/default/agetty-tty$n"
 done
 
 # Limits
@@ -510,7 +487,7 @@ for item in "$DOT"/*; do
   esac
 done
 
-# Status: compile status.c (source and binary both live in ~/.config/status/)
+# compile status.c
 if [ -f "$H/.config/status/status.c" ]; then
   cc -O2 -Wall -o "$H/.config/status/status" "$H/.config/status/status.c" -lX11
 fi
@@ -520,10 +497,11 @@ if [ ! -f "$H/.bash_profile" ]; then
   echo '[[ -f "$HOME/.bashrc" ]] && source "$HOME/.bashrc"' >"$H/.bash_profile"
 fi
 
-# Backlight
+# udev rules
 mkdir -p /etc/udev/rules.d
-cat >/etc/udev/rules.d/90-backlight.rules <<'UDEVRULE'
+cat >/etc/udev/rules.d/90-hardware.rules <<'UDEVRULE'
 ACTION=="add", SUBSYSTEM=="backlight", RUN+="/bin/chgrp video /sys/class/backlight/%k/brightness", RUN+="/bin/chmod g+w /sys/class/backlight/%k/brightness"
+ACTION=="add", SUBSYSTEM=="rfkill", RUN+="/usr/bin/rfkill unblock all"
 UDEVRULE
 
 # Keyboard layout
@@ -536,7 +514,7 @@ Section "InputClass"
 EndSection
 KBCONF
 
-# Auto-start
+# Autostart
 if ! grep -q 'exec startx' "$H/.bash_profile" 2>/dev/null; then
   cat >>"$H/.bash_profile" <<'AUTOSTARTX'
 
@@ -593,9 +571,13 @@ fi
 
 # Configure all packages
 xbps-reconfigure -fa
+
+for n in 3 4 5 6; do
+  rm -f "/etc/runit/runsvdir/default/agetty-tty$n"
+done
+
 grub-mkconfig -o /boot/grub/grub.cfg
 
-# Fix ownership of home (everything above ran as root)
 chown -R "$USERNAME:$USERNAME" "/home/$USERNAME"
 
 # Cleanup
@@ -642,7 +624,7 @@ chroot /mnt /bin/bash /root/chroot-setup.sh
 rm -rf /mnt/root/chroot-setup.sh /mnt/root/install.env /mnt/root/dotfiles
 
 echo
-echo "Reboot into your new Void Linux system."
+echo "Reboot"
 echo "Login as: $USERNAME"
 sleep 3
 umount -R /mnt
