@@ -1,6 +1,6 @@
 export EDITOR="nvim"
 export VISUAL="nvim"
-export PAGER="bat"
+export PAGER="cat"
 export BROWSER="qutebrowser"
 export TERMINAL="st"
 export FILE_MANAGER="nnn"
