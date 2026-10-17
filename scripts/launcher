@@ -1,5 +1,4 @@
 #!/bin/bash
-
 APP_DIRS="/usr/share/applications $HOME/.local/share/applications"
 
 list_apps() {
