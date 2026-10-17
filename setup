@@ -516,7 +516,7 @@ if ! grep -q 'exec startx' "$H/.bash_profile" 2>/dev/null; then
   cat >>"$H/.bash_profile" <<'AUTOSTARTX'
 
 if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
-  exec startx
+  exec startx > /dev/null 2>&1
 fi
 AUTOSTARTX
 fi
