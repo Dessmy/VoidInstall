@@ -471,11 +471,6 @@ for item in "$DOT"/*; do
       [ -n "$f" ] || continue
       cp "$f" "$H/.bashrc"
       ;;
-    .bash_profile)
-      f=$(src_of .bash_profile)
-      [ -n "$f" ] || continue
-      cp "$f" "$H/.bash_profile"
-      ;;
     .git*) continue ;;
     *)
       rm -rf "$H/.config/$name"
@@ -487,11 +482,6 @@ done
 # compile status.c
 if [ -f "$H/.config/status/status.c" ]; then
   cc -O2 -Wall -o "$H/.config/status/status" "$H/.config/status/status.c" -lX11
-fi
-
-# Fallback .bash_profile
-if [ ! -f "$H/.bash_profile" ]; then
-  echo '[[ -f "$HOME/.bashrc" ]] && source "$HOME/.bashrc"' >"$H/.bash_profile"
 fi
 
 # udev rules
@@ -511,22 +501,14 @@ Section "InputClass"
 EndSection
 KBCONF
 
-# Autostart
-if ! grep -q 'exec startx' "$H/.bash_profile" 2>/dev/null; then
-  cat >>"$H/.bash_profile" <<'AUTOSTARTX'
+# .bash_profile
+cat >"$H/.bash_profile" <<'BASHPROFILE'
+[[ -f "$HOME/.bashrc" ]] && source "$HOME/.bashrc"
 
 if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
   exec startx > /dev/null 2>&1
 fi
-AUTOSTARTX
-fi
-
-if ! grep -q '.local/bin' "$H/.bashrc" 2>/dev/null; then
-  cat >>"$H/.bashrc" <<'LOCALBINPATH'
-
-export PATH="$HOME/.local/bin:$PATH"
-LOCALBINPATH
-fi
+BASHPROFILE
 
 # Root configs symlink
 mkdir -p /root/.config
