@@ -1,4 +1,5 @@
 #!/bin/sh
+
 SAVE_DIR="$HOME/Pictures/Screenshots"
 mkdir -p "$SAVE_DIR"
 FILEPATH="$SAVE_DIR/screenshot_$(date +'%Y-%m-%d_%H-%M-%S').png"
@@ -20,5 +21,5 @@ fi
 
 if [ -f "$FILEPATH" ]; then
     xclip -selection clipboard -t image/png < "$FILEPATH"
-    notify-send 'Screenshot' 'Saved and copied'
+    notify-send -i "$FILEPATH" 'Screenshot' 'Saved and copied'
 fi

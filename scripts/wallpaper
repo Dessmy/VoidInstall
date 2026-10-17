@@ -38,7 +38,7 @@ target=$(printf '%s\n' "$ordered" | awk -v cur="$current" '
 
 FULL_PATH="$WALLPAPER_DIR/$target"
 
-xwallpaper --zoom "$FULL_PATH"
+"$HOME/.local/bin/setbg" "$FULL_PATH"
 
 echo "$FULL_PATH" > "$CACHE_FILE"
-notify-send 'Wallpaper' "${target%.*}"
+notify-send -i "$FULL_PATH" 'Wallpaper' "${target%.*}"
