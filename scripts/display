@@ -1,7 +1,4 @@
 #!/bin/sh
-# Pick a resolution for a monitor and save it as an Xorg config.
-# Takes effect after restarting X (no xrandr needed). Run it in a terminal: sudo asks for your password.
-
 CONF_DIR="${CONF_DIR:-/etc/X11/xorg.conf.d}"
 LOG="$HOME/.local/share/xorg/Xorg.0.log"
 [ -f "$LOG" ] || LOG=/var/log/Xorg.0.log
@@ -27,14 +24,14 @@ mode=$(printf 'default (remove setting)\n%s\n' "$modes" | dmenu -l 15 -p "Resolu
 file="$CONF_DIR/10-monitor-$out.conf"
 if [ "$mode" = "default (remove setting)" ]; then
     sudo rm -f "$file"
-    msg="Resolution setting for $out removed"
+    msg="$out reset to default"
 else
     sudo mkdir -p "$CONF_DIR"
     printf 'Section "Monitor"\n    Identifier "%s"\n    Option "PreferredMode" "%s"\nEndSection\n' "$out" "$mode" |
         sudo tee "$file" >/dev/null
-    msg="$out: $mode saved"
+    msg="$out $mode"
 fi
 
-notify-send -a display 'Display' "$msg. Restart X to apply (Super+Shift+q, then startx)."
+notify-send 'Display' "$msg, restart X"
 echo "$msg. Restart X to apply."
 sleep 3

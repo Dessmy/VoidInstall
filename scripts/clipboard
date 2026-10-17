@@ -1,8 +1,33 @@
 #!/bin/bash
 
-choice=$(cliphist list | dmenu -l 15 -p "Clipboard>" "$@")
+dir="$HOME/.cache/clipboard"
+slots=50
+
+[ -f "$dir/head" ] || exit 0
+read -r next < "$dir/head"
+
+label() {
+  sed -n '/[^[:space:]]/{s/^[[:space:]]*//;p;q}' "$1" | cut -c1-120
+}
+
+files=()
+labels=()
+for ((i = 1; i <= slots; i++)); do
+  f="$dir/$(((next - i + slots) % slots))"
+  [ -s "$f" ] || continue
+  files+=("$f")
+  labels+=("$(label "$f")")
+done
+
+[ "${#files[@]}" -eq 0 ] && exit 0
+
+choice=$(printf '%s\n' "${labels[@]}" | dmenu -l 15 -p "Clipboard>" "$@")
 [ -z "$choice" ] && exit 0
 
-printf '%s' "$choice" | cliphist decode | xclip -selection clipboard
-
-notify-send -a clipboard 'Clipboard' 'Item copied'
+for i in "${!labels[@]}"; do
+  if [ "${labels[$i]}" = "$choice" ]; then
+    xclip -selection clipboard < "${files[$i]}"
+    notify-send 'Clipboard' 'Copied'
+    exit 0
+  fi
+done

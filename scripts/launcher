@@ -33,7 +33,7 @@ calc_eval() {
     *) return 0 ;;
   esac
 
-  # awk does the math (floating point; ^ is power); input is already limited to digits and + - * / ^ ( ) .
+  # awk does the math
   result=$(awk "BEGIN { printf \"%.10g\\n\", ($q) }" 2>/dev/null) || return 0
   case "$result" in
     '' | *inf* | *nan*) return 0 ;;
@@ -52,7 +52,7 @@ if [ -z "$cmd" ]; then
   result=$(calc_eval "$chosen")
   if [ -n "$result" ]; then
     printf '%s' "$result" | xclip -selection clipboard
-    notify-send -a launchr 'Calculator' "$chosen = $result (copied)"
+    notify-send 'Calc' "$chosen = $result"
   fi
   exit 0
 fi

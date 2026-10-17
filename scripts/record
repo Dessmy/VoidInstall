@@ -9,7 +9,7 @@ PID_FILE="/tmp/ffmpeg-record.pid"
 if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
     kill "$(cat "$PID_FILE")"
     rm -f "$PID_FILE"
-    notify-send -a Recording "Recording" "Stopped and saved to $FILEPATH"
+    notify-send 'Recording' 'Saved'
     exit 0
 fi
 
@@ -28,4 +28,4 @@ else
 fi
 
 echo $! > "$PID_FILE"
-notify-send -a Recording "Recording" "Started (press Super+r again to stop)"
+notify-send 'Recording' 'Started'

@@ -21,5 +21,5 @@ fi
 
 if [ -f "$FILEPATH" ]; then
     xclip -selection clipboard -t image/png < "$FILEPATH"
-    notify-send -a Screenshot "Screenshot" "Saved to $FILEPATH"
+    notify-send 'Screenshot' 'Saved and copied'
 fi

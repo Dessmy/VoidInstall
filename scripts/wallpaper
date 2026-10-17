@@ -6,7 +6,7 @@ CACHE_FILE="$HOME/.cache/current_wallpaper"
 DIRECTION="${1:-next}"
 
 if [ ! -d "$WALLPAPER_DIR" ]; then
-    notify-send -u critical "Wallpaper Error" "Directory $WALLPAPER_DIR not found"
+    notify-send -u critical 'Wallpaper' 'Folder not found'
     exit 1
 fi
 
@@ -16,7 +16,7 @@ list=$(find . -maxdepth 1 -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname
     | sed 's|^\./||' | sort)
 
 if [ -z "$list" ]; then
-    notify-send -u critical "Wallpaper Error" "No wallpapers found in $WALLPAPER_DIR"
+    notify-send -u critical 'Wallpaper' 'No images'
     exit 1
 fi
 
@@ -38,8 +38,7 @@ target=$(printf '%s\n' "$ordered" | awk -v cur="$current" '
 
 FULL_PATH="$WALLPAPER_DIR/$target"
 
-# Set wallpaper with xwallpaper
 xwallpaper --zoom "$FULL_PATH"
 
 echo "$FULL_PATH" > "$CACHE_FILE"
-notify-send -a Wallpaper -i "$FULL_PATH" "Wallpaper Changed" "Now showing: $target"
+notify-send 'Wallpaper' "${target%.*}"
