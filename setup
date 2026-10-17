@@ -228,7 +228,7 @@ CORE_PKGS="base-system linux-firmware grub dbus iwd make gcc pkg-config libX11-d
 [ "$ENCRYPT" -eq 1 ] && CORE_PKGS="$CORE_PKGS lvm2 cryptsetup"
 
 EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez mesa-dri pulseaudio-utils xorg-minimal xorg-input-drivers xinit xclip
-xset xautolock xwallpaper font-firacode
+xset xautolock font-firacode
 slop maim nnn neovim fastfetch qutebrowser ffmpeg"
 
 [ "$IS_LAPTOP" -eq 1 ] && EXTRA_PKGS="$EXTRA_PKGS tlp"
@@ -491,6 +491,21 @@ done
 # compile status.c
 if [ -f "$H/.config/status/status.c" ]; then
   cc -O2 -Wall -o "$H/.config/status/status" "$H/.config/status/status.c" -lX11
+fi
+
+if [ -f "$H/.config/view/view.c" ]; then
+  mkdir -p "$H/.local/bin"
+  cc -O2 -Wall -o "$H/.local/bin/view" "$H/.config/view/view.c" -lX11
+fi
+
+if [ -f "$H/.config/play/play.c" ]; then
+  mkdir -p "$H/.local/bin"
+  cc -O2 -Wall -o "$H/.local/bin/play" "$H/.config/play/play.c" -lX11
+fi
+
+if [ -f "$H/.config/setbg/setbg.c" ]; then
+  mkdir -p "$H/.local/bin"
+  cc -O2 -Wall -o "$H/.local/bin/setbg" "$H/.config/setbg/setbg.c" -lX11
 fi
 
 # udev rules
