@@ -9,8 +9,6 @@ xset +dpms
 
 xautolock -time 5 -locker slock -detectsleep &
 
-dunst -config ~/.config/dunst/dunstrc &
-
 [ -f ~/.local/share/wallpaper.jpg ] && xwallpaper --zoom ~/.local/share/wallpaper.jpg &
 
 pipewire >/dev/null 2>&1 &
