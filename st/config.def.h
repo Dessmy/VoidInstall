@@ -200,6 +200,10 @@ static Shortcut shortcuts[] = {
 	{ TERMMOD,              XK_Y,           selpaste,       {.i =  0} },
 	{ ShiftMask,            XK_Insert,      selpaste,       {.i =  0} },
 	{ TERMMOD,              XK_Num_Lock,    numlock,        {.i =  0} },
+	{ ShiftMask,            XK_Prior,       kscrollup,      {.i =  10} },
+	{ ShiftMask,            XK_Next,        kscrolldown,    {.i =  10} },
+	{ ShiftMask,            XK_Home,        kscrollup,      {.i =  1000000} },
+	{ ShiftMask,            XK_End,         kscrolldown,    {.i =  1000000} },
 };
 
 /*
@@ -471,3 +475,5 @@ static char ascii_printable[] =
 	" !\"#$%&'()*+,-./0123456789:;<=>?"
 	"@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_"
 	"`abcdefghijklmnopqrstuvwxyz{|}~";
+
+unsigned int scrollback_lines = 5000;
