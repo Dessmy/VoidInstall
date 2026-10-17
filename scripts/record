@@ -1,5 +1,4 @@
 #!/bin/sh
-
 SAVE_DIR="$HOME/Videos/Recordings"
 mkdir -p "$SAVE_DIR"
 FILEPATH="$SAVE_DIR/recording_$(date +'%Y-%m-%d_%H-%M-%S').mp4"

@@ -1,5 +1,4 @@
 #!/bin/bash
-
 dev=$(iwctl device list 2>/dev/null |
   sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g' |
   grep -Ev '^[[:space:]]*$' |

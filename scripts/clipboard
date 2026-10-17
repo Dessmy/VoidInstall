@@ -1,5 +1,4 @@
 #!/bin/bash
-
 dir="$HOME/.cache/clipboard"
 slots=50
 

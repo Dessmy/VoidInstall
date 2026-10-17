@@ -1,5 +1,4 @@
 #!/bin/bash
-
 _bluetooth_strip() {
   sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g;s/\r//g;s/^[[:space:]]+//'
 }
