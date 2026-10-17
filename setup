@@ -229,7 +229,7 @@ CORE_PKGS="base-system linux-firmware grub dbus iwd make gcc pkg-config libX11-d
 
 EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez htop mesa-dri pulseaudio-utils xorg-minimal xorg-input-drivers xinit xclip
 xset xautolock xwallpaper font-firacode
-slop maim dunst nnn neovim fastfetch qutebrowser"
+slop maim nnn neovim fastfetch qutebrowser"
 
 [ "$IS_LAPTOP" -eq 1 ] && EXTRA_PKGS="$EXTRA_PKGS tlp"
 
