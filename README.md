@@ -1,11 +1,11 @@
-# Quick Install (from Void live ISO)
+## Quick Install (from Void live ISO)
 
 ### Boot Void live ISO (glibc)
 ```bash
 git clone https://github.com/Dessmy/VoidInstall && cd VoidInstall && sudo bash setup
 ```
 
-## Key Bindings (dwm)
+### Key Bindings (dwm)
 
 | Key | Action |
 |-----|--------|
