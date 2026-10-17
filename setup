@@ -136,7 +136,7 @@ wait_for_blockdev() {
 lsblk "$DISK" 2>/dev/null || true
 wait_for_blockdev "$ROOT_PART" || exit 1
 
-mkfs_fs() { # label device
+mkfs_fs() {
   mkfs.ext4 -F -L "$1" "$2"
 }
 
