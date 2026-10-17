@@ -2,12 +2,9 @@
 
 [ -z "$DBUS_SESSION_BUS_ADDRESS" ] && exec dbus-run-session -- sh "$HOME/.xinitrc"
 
-xset -b &
-xset s off
-xset dpms 0 0 600
-xset +dpms
+"$HOME/.local/bin/screenctl" nobell noblank dpms 0 0 600
 
-xautolock -time 5 -locker slock -detectsleep &
+"$HOME/.local/bin/autolock" 300 slock &
 
 [ -f ~/.local/share/wallpaper.jpg ] && "$HOME/.local/bin/setbg" ~/.local/share/wallpaper.jpg &
 
