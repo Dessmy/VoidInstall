@@ -1,9 +1,10 @@
 ## Quick Install (from Void live ISO)
 
-```bash
 # Boot Void live ISO (glibc)
 # Clone dotfiles
+```bash
 git clone https://github.com/Dessmy/VoidInstall && cd VoidInstall && sudo bash setup
+```
 
 
 ## Key Bindings (dwm)
@@ -31,7 +32,6 @@ git clone https://github.com/Dessmy/VoidInstall && cd VoidInstall && sudo bash s
 
 Use prime-run for NVIDIA GPU:
 
-```bash
 # Run any app on NVIDIA GPU
 prime-run steam
 
@@ -39,7 +39,5 @@ prime-run steam
 prime-run glxinfo | grep "OpenGL renderer"
 prime-run vulkaninfo | grep deviceName
 
-
 # Check devices
 pactl list short sinks
-```
