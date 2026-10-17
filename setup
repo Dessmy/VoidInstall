@@ -228,7 +228,7 @@ CORE_PKGS="base-system linux-firmware grub dbus iwd make gcc pkg-config libX11-d
 [ "$ENCRYPT" -eq 1 ] && CORE_PKGS="$CORE_PKGS lvm2 cryptsetup"
 
 EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez mesa-dri pulseaudio-utils xorg-minimal xorg-input-drivers xinit xclip
-xset xautolock font-firacode
+font-firacode
 slop maim nnn neovim fastfetch qutebrowser ffmpeg"
 
 [ "$IS_LAPTOP" -eq 1 ] && EXTRA_PKGS="$EXTRA_PKGS tlp"
@@ -506,6 +506,16 @@ fi
 if [ -f "$H/.config/setbg/setbg.c" ]; then
   mkdir -p "$H/.local/bin"
   cc -O2 -Wall -o "$H/.local/bin/setbg" "$H/.config/setbg/setbg.c" -lX11
+fi
+
+if [ -f "$H/.config/screenctl/screenctl.c" ]; then
+  mkdir -p "$H/.local/bin"
+  cc -O2 -Wall -o "$H/.local/bin/screenctl" "$H/.config/screenctl/screenctl.c" -lX11 -lXext
+fi
+
+if [ -f "$H/.config/autolock/autolock.c" ]; then
+  mkdir -p "$H/.local/bin"
+  cc -O2 -Wall -o "$H/.local/bin/autolock" "$H/.config/autolock/autolock.c" -lX11 -lXext
 fi
 
 # udev rules
