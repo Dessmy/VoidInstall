@@ -25,17 +25,3 @@ git clone https://github.com/Dessmy/VoidInstall && cd VoidInstall && sudo bash s
 | Super+-/= | Decrease/increase brightness |
 | Super+Shift+s | Screenshot (area) |
 | Super+s | Screenshot (full) |
-
-### NVIDIA GPU (Prime Render Offload)
-
-Use prime-run for NVIDIA GPU:
-
-### Run any app on NVIDIA GPU
-prime-run steam
-
-### Test it works
-prime-run glxinfo | grep "OpenGL renderer"
-prime-run vulkaninfo | grep deviceName
-
-### Check devices
-pactl list short sinks
