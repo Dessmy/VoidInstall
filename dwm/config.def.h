@@ -8,7 +8,6 @@ static const unsigned int snap      = 32;       /* snap pixel */
 static const int showbar            = 1;        /* 0 means no bar */
 static const int topbar             = 1;        /* 0 means bottom bar */
 static const char *fonts[]          = { "FiraCode Nerd Font:size=16:weight=bold" };
-static const char dmenufont[]       = "FiraCode Nerd Font:size=16:weight=bold";
 static const char col_base[]        = "#1e1e2e";
 static const char col_surface0[]    = "#313244";
 static const char col_text[]        = "#cdd6f4";
@@ -58,13 +57,12 @@ static const Layout layouts[] = {
 #define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
 
 /* commands */
-static char dmenumon[2] = "0"; /* component of dmenucmd, manipulated in spawn() */
-static const char *dmenucmd[] = { "dmenu_run", "-m", dmenumon, "-fn", dmenufont, "-nb", col_base, "-nf", col_text, "-sb", col_blue, "-sf", col_base, NULL };
 static const char *termcmd[]  = { "st", NULL };
+static const char *browsercmd[] = { "qutebrowser", NULL };
 
 static const Key keys[] = {
 	/* modifier                     key        function        argument */
-	{ MODKEY,                       XK_p,      spawn,          {.v = dmenucmd } },
+	{ MODKEY,                       XK_q,      spawn,          {.v = browsercmd } },
 	{ MODKEY|ShiftMask,             XK_Return, spawn,          {.v = termcmd } },
 	{ MODKEY,                       XK_b,      togglebar,      {0} },
 	{ MODKEY,                       XK_j,      focusstack,     {.i = +1 } },
@@ -97,8 +95,6 @@ static const Key keys[] = {
 	TAGKEYS(                        XK_8,                      7)
 	TAGKEYS(                        XK_9,                      8)
 	{ MODKEY|ShiftMask,             XK_q,      quit,           {0} },
-
-	/* scripts (~/.local/bin) */
 	{ MODKEY|ShiftMask,             XK_l,            spawn, SHCMD("slock") },
 	{ MODKEY,                       XK_a,            spawn, SHCMD("$HOME/.local/bin/launchr") },
 	{ MODKEY,                       XK_v,            spawn, SHCMD("$HOME/.local/bin/clipboard") },
@@ -109,10 +105,11 @@ static const Key keys[] = {
 	{ MODKEY|ShiftMask,             XK_s,            spawn, SHCMD("$HOME/.local/bin/screenshot area") },
 	{ MODKEY,                       XK_r,            spawn, SHCMD("$HOME/.local/bin/record") },
 	{ MODKEY|ShiftMask,             XK_r,            spawn, SHCMD("$HOME/.local/bin/record area") },
-	{ 0,                            XF86XK_MonBrightnessUp,   spawn, SHCMD("$HOME/.local/bin/brightness up") },
-	{ 0,                            XF86XK_MonBrightnessDown, spawn, SHCMD("$HOME/.local/bin/brightness down") },
-	{ MODKEY,                       XK_F6,           spawn, SHCMD("$HOME/.local/bin/brightness up") },
-	{ MODKEY,                       XK_F5,           spawn, SHCMD("$HOME/.local/bin/brightness down") },
+	{ MODKEY,                       XK_equal,        spawn, SHCMD("$HOME/.local/bin/brightness up") },
+	{ MODKEY,                       XK_minus,        spawn, SHCMD("$HOME/.local/bin/brightness down") },
+	{ MODKEY|ShiftMask,             XK_equal,        spawn, SHCMD("pactl set-sink-volume @DEFAULT_SINK@ +5%") },
+	{ MODKEY|ShiftMask,             XK_minus,        spawn, SHCMD("pactl set-sink-volume @DEFAULT_SINK@ -5%") },
+	{ MODKEY|ShiftMask,             XK_m,            spawn, SHCMD("pactl set-sink-mute @DEFAULT_SINK@ toggle") },
 	{ MODKEY,                       XK_bracketright, spawn, SHCMD("$HOME/.local/bin/wallpaper next") },
 	{ MODKEY,                       XK_bracketleft,  spawn, SHCMD("$HOME/.local/bin/wallpaper prev") },
 };
