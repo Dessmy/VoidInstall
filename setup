@@ -227,7 +227,7 @@ CORE_PKGS="base-system linux-firmware grub dbus iwd make gcc pkg-config libX11-d
 [ "$BOOT_MODE" = "uefi" ] && CORE_PKGS="$CORE_PKGS grub-x86_64-efi efibootmgr"
 [ "$ENCRYPT" -eq 1 ] && CORE_PKGS="$CORE_PKGS lvm2 cryptsetup"
 
-EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez htop openresolv mesa-dri pulseaudio-utils xorg-minimal xorg-input-drivers xinit xclip
+EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez htop mesa-dri pulseaudio-utils xorg-minimal xorg-input-drivers xinit xclip
 xset xautolock xwallpaper font-firacode
 slop maim dunst nnn neovim fastfetch qutebrowser"
 
@@ -386,9 +386,6 @@ mkdir -p /etc/iwd
 cat >/etc/iwd/main.conf <<'IWDCONF'
 [General]
 EnableNetworkConfiguration=true
-
-[Network]
-NameResolvingService=resolvconf
 IWDCONF
 
 # Enable services
@@ -583,6 +580,8 @@ chown -R "$USERNAME:$USERNAME" "/home/$USERNAME"
 # Cleanup
 rm -f /root/*-build.log
 xbps-remove -Oo -y 2>/dev/null || true
+
+printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' >/etc/resolv.conf
 CHROOT_EOF
 
 chmod +x /mnt/root/chroot-setup.sh
