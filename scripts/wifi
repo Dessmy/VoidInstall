@@ -71,7 +71,11 @@ if [ -n "$cur_ssid" ] && [ "$network" = "$cur_ssid" ]; then
 fi
 
 _wifi_connect() {
-  timeout 15 iwctl station "$dev" connect "$network" </dev/null >/dev/null 2>&1
+  if [ -n "$1" ]; then
+    timeout 15 iwctl --passphrase="$1" station "$dev" connect "$network" </dev/null >/dev/null 2>&1
+  else
+    timeout 15 iwctl --dont-ask station "$dev" connect "$network" </dev/null >/dev/null 2>&1
+  fi
 
   local i=0 connected=0
   while [ "$i" -lt 10 ]; do
@@ -102,4 +106,7 @@ if [ "$security" = "open" ]; then
   exit 0
 fi
 
-_wifi_connect
+pass=$(printf '' | dmenu "$@" -nb "#1e1e2e" -nf "#1e1e2e" -p "Password $network>")
+[ -z "$pass" ] && exit 0
+
+_wifi_connect "$pass"
