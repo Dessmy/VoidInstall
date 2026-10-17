@@ -227,7 +227,7 @@ CORE_PKGS="base-system linux-firmware grub dbus iwd make gcc pkg-config libX11-d
 [ "$BOOT_MODE" = "uefi" ] && CORE_PKGS="$CORE_PKGS grub-x86_64-efi efibootmgr"
 [ "$ENCRYPT" -eq 1 ] && CORE_PKGS="$CORE_PKGS lvm2 cryptsetup"
 
-EXTRA_PKGS="git patch pipewire wireplumber libspa-bluetooth alsa-utils bluez htop mesa-dri pulseaudio-utils xorg-minimal xorg-input-drivers xinit xclip
+EXTRA_PKGS="git pipewire wireplumber libspa-bluetooth alsa-utils bluez htop mesa-dri pulseaudio-utils xorg-minimal xorg-input-drivers xinit xclip
 xset xautolock xwallpaper font-firacode
 slop maim dunst nnn neovim fastfetch qutebrowser"
 
@@ -430,24 +430,10 @@ fc-cache -f
 # Clone suckless tools
 set -o pipefail
 DOT=/root/dotfiles
-ST_PATCH_URL="https://st.suckless.org/patches/scrollback-reflow-standalone/st-scrollback-reflow-standalone-extended-0.9.3.diff"
 for tool in dwm st dmenu slock; do
   rm -rf "$H/.config/$tool"
-  if [ "$tool" = st ]; then
-    git clone --depth 1 --branch 0.9.3 "https://git.suckless.org/st" "$H/.config/st" ||
-      git clone --depth 1 "https://git.suckless.org/st" "$H/.config/st"
-  else
-    git clone --depth 1 "https://git.suckless.org/$tool" "$H/.config/$tool"
-  fi
+  git clone --depth 1 "https://git.suckless.org/$tool" "$H/.config/$tool"
   rm -rf "$H/.config/$tool/.git"
-  if [ "$tool" = dwm ]; then
-    sed -i '/arg->v == dmenucmd/,+1d' "$H/.config/dwm/dwm.c"
-  fi
-  if [ "$tool" = st ]; then
-    curl -fsSL "$ST_PATCH_URL" -o /tmp/st-scrollback.diff
-    (cd "$H/.config/st" && patch -p1 < /tmp/st-scrollback.diff)
-    rm -f /tmp/st-scrollback.diff
-  fi
   if [ -f "$DOT/$tool/config.def.h" ]; then
     cp "$DOT/$tool/config.def.h" "$H/.config/$tool/config.def.h"
   fi
