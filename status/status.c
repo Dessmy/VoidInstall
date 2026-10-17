@@ -10,6 +10,7 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
@@ -22,6 +23,11 @@
 
 #define NOTIF_NAME  "org.freedesktop.Notifications"
 #define NOTIF_PATH  "/org/freedesktop/Notifications"
+
+#define POP_SIZE    96
+#define POP_BYTES   (POP_SIZE * POP_SIZE * 4)
+#define POP_Y       44
+#define POP_MARGIN  12
 
 #define CLIP_SLOTS  50
 #define CLIP_MAX    65536
@@ -38,6 +44,13 @@ static unsigned char ibuf[65536];
 static size_t ilen;
 static char dmsg[384];
 static long dexp;
+
+static Window popwin;
+static GC popgc;
+static XImage *popimg;
+static unsigned char popbuf[POP_BYTES], poptmp[POP_BYTES];
+static int pop_ready, pop_visible, pop_dirty;
+static long pop_exp, fimg_loaded;
 
 static Window clipwin;
 static Atom a_clip, a_utf8, a_prop, a_incr;
@@ -65,12 +78,13 @@ static void on_usr1(int sig)
 	(void)sig;
 }
 
-static long read_msg(char *msg, size_t n)
+static long read_msg(char *msg, size_t n, char *img, size_t in)
 {
 	char path[64], first[32];
 	FILE *f;
 	long expiry;
 
+	img[0] = '\0';
 	snprintf(path, sizeof path, "/tmp/bar-msg-%u", (unsigned)getuid());
 	f = fopen(path, "r");
 	if (!f)
@@ -83,8 +97,11 @@ static long read_msg(char *msg, size_t n)
 	expiry = atol(first);
 	if (!fgets(msg, n, f))
 		msg[0] = '\0';
+	if (!fgets(img, in, f))
+		img[0] = '\0';
 	fclose(f);
 	msg[strcspn(msg, "\n")] = '\0';
+	img[strcspn(img, "\n")] = '\0';
 	return msg[0] ? expiry : 0;
 }
 
@@ -320,6 +337,235 @@ static void clean(char *dst, size_t n, const char *summary, const char *body)
 	dst[o] = '\0';
 }
 
+static void pop_bg(void)
+{
+	int i;
+
+	for (i = 0; i < POP_SIZE * POP_SIZE; i++) {
+		popbuf[i * 4] = 0x2e;
+		popbuf[i * 4 + 1] = 0x1e;
+		popbuf[i * 4 + 2] = 0x1e;
+		popbuf[i * 4 + 3] = 0;
+	}
+}
+
+static int pop_from_raw(const unsigned char *src, int w, int h, int stride, int ch)
+{
+	int s = w > h ? w : h, dw = w * POP_SIZE / s, dh = h * POP_SIZE / s;
+	int ox, oy, x, y;
+
+	if (dw < 1)
+		dw = 1;
+	if (dh < 1)
+		dh = 1;
+	if (dw > POP_SIZE)
+		dw = POP_SIZE;
+	if (dh > POP_SIZE)
+		dh = POP_SIZE;
+	ox = (POP_SIZE - dw) / 2;
+	oy = (POP_SIZE - dh) / 2;
+	pop_bg();
+	for (y = 0; y < dh; y++) {
+		for (x = 0; x < dw; x++) {
+			const unsigned char *p = src + (size_t)(y * h / dh) * stride +
+				(size_t)(x * w / dw) * ch;
+			unsigned char *o = popbuf + ((size_t)(oy + y) * POP_SIZE + ox + x) * 4;
+			int a = ch == 4 ? p[3] : 255;
+
+			o[0] = (p[2] * a + o[0] * (255 - a)) / 255;
+			o[1] = (p[1] * a + o[1] * (255 - a)) / 255;
+			o[2] = (p[0] * a + o[2] * (255 - a)) / 255;
+		}
+	}
+	return 1;
+}
+
+static int pop_from_file(const char *path)
+{
+	struct stat st;
+	int fd[2], nul;
+	pid_t pid;
+	size_t got = 0;
+	time_t deadline = time(NULL) + 3;
+
+	if (path[0] != '/' || stat(path, &st) || !S_ISREG(st.st_mode))
+		return 0;
+	if (pipe(fd))
+		return 0;
+	pid = fork();
+	if (pid < 0) {
+		close(fd[0]);
+		close(fd[1]);
+		return 0;
+	}
+	if (pid == 0) {
+		sigset_t none;
+
+		sigemptyset(&none);
+		sigprocmask(SIG_SETMASK, &none, NULL);
+		dup2(fd[1], 1);
+		close(fd[0]);
+		close(fd[1]);
+		nul = open("/dev/null", O_RDWR);
+		if (nul >= 0) {
+			dup2(nul, 0);
+			dup2(nul, 2);
+		}
+		execlp("ffmpeg", "ffmpeg", "-v", "quiet", "-nostdin", "-i", path,
+			"-frames:v", "1", "-vf",
+			"scale=" "96:96:force_original_aspect_ratio=decrease,"
+			"pad=96:96:(ow-iw)/2:(oh-ih)/2:color=0x1e1e2e",
+			"-f", "rawvideo", "-pix_fmt", "bgr0", "-", (char *)NULL);
+		_exit(1);
+	}
+	close(fd[1]);
+	while (got < POP_BYTES && time(NULL) < deadline) {
+		fd_set r;
+		struct timeval tv = { 1, 0 };
+		ssize_t n;
+
+		FD_ZERO(&r);
+		FD_SET(fd[0], &r);
+		if (select(fd[0] + 1, &r, NULL, NULL, &tv) <= 0)
+			continue;
+		n = read(fd[0], poptmp + got, POP_BYTES - got);
+		if (n <= 0)
+			break;
+		got += (size_t)n;
+	}
+	close(fd[0]);
+	if (got < POP_BYTES)
+		kill(pid, SIGKILL);
+	waitpid(pid, NULL, 0);
+	if (got < POP_BYTES)
+		return 0;
+	memcpy(popbuf, poptmp, POP_BYTES);
+	return 1;
+}
+
+static int pop_from_path(const char *path)
+{
+	if (!strncmp(path, "file://", 7))
+		path += 7;
+	return pop_from_file(path);
+}
+
+static int pop_from_hints(const unsigned char *h, size_t hl)
+{
+	size_t p = 0;
+	char imgpath[512] = "";
+
+	while (p < hl) {
+		const char *key, *sig;
+		int sl;
+
+		p = (p + 7) & ~(size_t)7;
+		if (p >= hl)
+			break;
+		key = rstr(h, hl, &p);
+		if (!key || p + 2 > hl)
+			break;
+		sl = h[p++];
+		sig = (const char *)h + p;
+		p += (size_t)sl + 1;
+		if (p > hl)
+			break;
+
+		if (!strcmp(sig, "(iiibiiay)")) {
+			int32_t v[6];
+			uint32_t len;
+
+			p = (p + 7) & ~(size_t)7;
+			if (p + 28 > hl)
+				break;
+			memcpy(v, h + p, 24);
+			memcpy(&len, h + p + 24, 4);
+			p += 28;
+			if (p + (size_t)len > hl)
+				break;
+			if ((!strcmp(key, "image-data") || !strcmp(key, "image_data") ||
+			     !strcmp(key, "icon_data")) &&
+			    v[0] > 0 && v[0] <= 2048 && v[1] > 0 && v[1] <= 2048 &&
+			    v[4] == 8 && (v[5] == 3 || v[5] == 4) && v[2] >= v[0] * v[5] &&
+			    (size_t)len >= (size_t)v[2] * (size_t)(v[1] - 1) + (size_t)v[0] * v[5])
+				return pop_from_raw(h + p, v[0], v[1], v[2], v[5]);
+			p += len;
+		} else if (!strcmp(sig, "s") || !strcmp(sig, "o")) {
+			const char *val = rstr(h, hl, &p);
+
+			if (!val)
+				break;
+			if (!strcmp(key, "image-path") || !strcmp(key, "image_path"))
+				snprintf(imgpath, sizeof imgpath, "%s", val);
+		} else if (!strcmp(sig, "y")) {
+			p += 1;
+		} else if (!strcmp(sig, "b") || !strcmp(sig, "i") || !strcmp(sig, "u")) {
+			p = ((p + 3) & ~(size_t)3) + 4;
+		} else if (!strcmp(sig, "n") || !strcmp(sig, "q")) {
+			p = ((p + 1) & ~(size_t)1) + 2;
+		} else if (!strcmp(sig, "x") || !strcmp(sig, "t") || !strcmp(sig, "d")) {
+			p = ((p + 7) & ~(size_t)7) + 8;
+		} else {
+			break;
+		}
+	}
+	return imgpath[0] ? pop_from_path(imgpath) : 0;
+}
+
+static void pop_init(Display *dpy, Window root)
+{
+	int scr = DefaultScreen(dpy), depth = DefaultDepth(dpy, scr);
+	XSetWindowAttributes at;
+
+	if (depth != 24 && depth != 32)
+		return;
+	memset(&at, 0, sizeof at);
+	at.override_redirect = True;
+	at.background_pixel = BlackPixel(dpy, scr);
+	popwin = XCreateWindow(dpy, root,
+		DisplayWidth(dpy, scr) - POP_SIZE - POP_MARGIN, POP_Y, POP_SIZE, POP_SIZE,
+		0, CopyFromParent, InputOutput, CopyFromParent,
+		CWOverrideRedirect | CWBackPixel, &at);
+	XSelectInput(dpy, popwin, ExposureMask);
+	popgc = XCreateGC(dpy, popwin, 0, NULL);
+	pop_bg();
+	popimg = XCreateImage(dpy, DefaultVisual(dpy, scr), depth, ZPixmap, 0,
+		(char *)popbuf, POP_SIZE, POP_SIZE, 32, 0);
+}
+
+static void pop_draw(Display *dpy)
+{
+	if (popimg)
+		XPutImage(dpy, popwin, popgc, popimg, 0, 0, 0, 0, POP_SIZE, POP_SIZE);
+}
+
+static void pop_update(Display *dpy, long now)
+{
+	int show = popimg && pop_ready && pop_exp > now;
+
+	if (show && !pop_visible) {
+		XMapRaised(dpy, popwin);
+		pop_visible = 1;
+		pop_draw(dpy);
+	} else if (show && pop_dirty) {
+		pop_draw(dpy);
+	} else if (!show && pop_visible) {
+		XUnmapWindow(dpy, popwin);
+		pop_visible = 0;
+	}
+	pop_dirty = 0;
+}
+
+static void reply_invalid(const char *sender, uint32_t ser)
+{
+	Buf r;
+
+	r.n = 0;
+	pstr(&r, "Invalid Notify arguments");
+	send_msg(3, ser, sender, NULL, NULL, NULL,
+		"org.freedesktop.DBus.Error.InvalidArgs", "s", &r);
+}
+
 static void do_notify(const unsigned char *b, size_t bl, const char *sender,
 	uint32_t ser)
 {
@@ -328,19 +574,25 @@ static void do_notify(const unsigned char *b, size_t bl, const char *sender,
 	int32_t expire = -1;
 	const char *app, *icon, *summary, *body;
 	long secs = 5;
+	size_t hstart = 0, hsize = 0;
+	int got = 0;
 	Buf r;
 
 	app = rstr(b, bl, &q);
 	q = (q + 3) & ~(size_t)3;
-	if (!app || q + 4 > bl)
+	if (!app || q + 4 > bl) {
+		reply_invalid(sender, ser);
 		return;
+	}
 	memcpy(&replaces, b + q, 4);
 	q += 4;
 	icon = rstr(b, bl, &q);
 	summary = icon ? rstr(b, bl, &q) : NULL;
 	body = summary ? rstr(b, bl, &q) : NULL;
-	if (!body)
+	if (!body) {
+		reply_invalid(sender, ser);
 		return;
+	}
 
 	q = (q + 3) & ~(size_t)3;
 	if (q + 4 <= bl) {
@@ -351,6 +603,8 @@ static void do_notify(const unsigned char *b, size_t bl, const char *sender,
 			memcpy(&hlen, b + q, 4);
 			q += 4;
 			q = (q + 7) & ~(size_t)7;
+			hstart = q;
+			hsize = hlen;
 			q += hlen;
 			q = (q + 3) & ~(size_t)3;
 			if (q + 4 <= bl)
@@ -369,6 +623,14 @@ static void do_notify(const unsigned char *b, size_t bl, const char *sender,
 	dexp = (long)time(NULL) + secs;
 	if (!dmsg[0])
 		dexp = 0;
+
+	if (hsize && hstart + hsize <= bl)
+		got = pop_from_hints(b + hstart, hsize);
+	if (!got && *icon)
+		got = pop_from_path(icon);
+	pop_ready = got;
+	pop_exp = dexp;
+	pop_dirty = 1;
 
 	if (!replaces)
 		replaces = ++notif_id;
@@ -665,9 +927,10 @@ int main(void)
 
 	bus_connect();
 	clip_init(dpy, root);
+	pop_init(dpy, root);
 
 	for (;;) {
-		char cap[16] = "", raw[32] = "", path[96], bar[512], tbuf[64], fmsg[384];
+		char cap[16] = "", raw[32] = "", path[96], bar[512], tbuf[64], fmsg[384], fimg[512];
 		static char lastbar[512];
 		const char *st, *text = NULL;
 		long fexp;
@@ -684,6 +947,8 @@ int main(void)
 			XNextEvent(dpy, &ev);
 			if (ev.type == SelectionNotify)
 				clip_event(dpy, &ev.xselection);
+			else if (ev.type == Expose && ev.xexpose.window == popwin && pop_visible)
+				pop_draw(dpy);
 		}
 		clip_poll(dpy);
 
@@ -710,7 +975,7 @@ int main(void)
 		else /* no battery (VM, desktop) */
 			snprintf(bar, sizeof bar, "%s", tbuf);
 
-		fexp = read_msg(fmsg, sizeof fmsg);
+		fexp = read_msg(fmsg, sizeof fmsg, fimg, sizeof fimg);
 		if (fexp <= (long)now)
 			fexp = 0;
 		if (dexp <= (long)now)
@@ -722,6 +987,13 @@ int main(void)
 		}
 		if (text)
 			snprintf(bar, sizeof bar, "%s", text);
+		if (text == fmsg && fexp != fimg_loaded) {
+			fimg_loaded = fexp;
+			pop_ready = fimg[0] ? pop_from_path(fimg) : 0;
+			pop_exp = fexp;
+			pop_dirty = 1;
+		}
+		pop_update(dpy, (long)now);
 
 		if (strcmp(bar, lastbar)) {
 			XStoreName(dpy, root, bar);
